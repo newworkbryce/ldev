@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Local Projects</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <h1 class="title">
+        <span class="title-icon" aria-hidden="true">◇</span>
+        Local Projects
+      </h1>
+      <p class="subtitle">Quick access to your development sites</p>
+      <button type="button" class="btn btn-primary add-btn" id="addProjectBtn" aria-label="Add project">
+        <span class="btn-icon">+</span>
+        Add project
+      </button>
+    </header>
+
+    <main class="main">
+      <div class="projects-list" id="projectsList" role="list">
+        <!-- Project cards rendered by JS -->
+      </div>
+      <div class="empty-state" id="emptyState" hidden>
+        <div class="empty-icon" aria-hidden="true">◈</div>
+        <p class="empty-title">No projects yet</p>
+        <p class="empty-text">Add your first project to get started.</p>
+        <button type="button" class="btn btn-secondary" id="emptyAddBtn">Add project</button>
+      </div>
+      <div class="error-message" id="errorMessage" hidden></div>
+    </main>
+  </div>
+
+  <dialog class="modal" id="projectModal" aria-labelledby="modalTitle" aria-modal="true">
+    <div class="modal-backdrop" id="modalBackdrop"></div>
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 id="modalTitle" class="modal-title">Add project</h2>
+        <button type="button" class="modal-close" id="modalClose" aria-label="Close">&times;</button>
+      </div>
+      <form class="modal-form" id="projectForm">
+        <div class="field">
+          <label for="projectName">Project name</label>
+          <input type="text" id="projectName" name="name" required placeholder="e.g. Seasonal Drops" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="projectUrl">Local URL</label>
+          <input type="url" id="projectUrl" name="url" required placeholder="e.g. https://seasonal-drops.ldev:8443" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="projectPort">Port</label>
+          <input type="text" id="projectPort" name="port" placeholder="e.g. 8443" inputmode="numeric" pattern="[0-9]*" autocomplete="off">
+        </div>
+        <div class="field">
+          <label for="projectPlatform">Platform</label>
+          <select id="projectPlatform" name="platform">
+            <option value="">Select platform</option>
+            <option value="WordPress">WordPress</option>
+            <option value="Node">Node</option>
+            <option value="Laravel">Laravel</option>
+            <option value="Next.js">Next.js</option>
+            <option value="Vite">Vite</option>
+            <option value="Rails">Rails</option>
+            <option value="Django">Django</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="modalCancel">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save project</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <script src="app.js"></script>
+</body>
+</html>

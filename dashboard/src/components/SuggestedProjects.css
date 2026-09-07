@@ -1,0 +1,218 @@
+.suggested-projects {
+  margin-top: 2.5rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+}
+
+.suggested-projects-heading {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin: 0 0 1rem;
+  letter-spacing: 0.02em;
+}
+
+.suggested-projects-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 1rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.suggested-tile {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem 1.35rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.suggested-tile:hover {
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow);
+}
+
+.suggested-tile-name {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.suggested-tile-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.suggested-tile-meta .badge {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  background: var(--elevated);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+
+.suggested-tile-meta .badge-platform {
+  background: var(--accent-muted);
+  color: var(--accent);
+  border-color: transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.suggested-tile-platform-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.suggested-tile-platform-icon svg {
+  display: block;
+}
+
+.suggested-tile-meta .badge-port {
+  color: var(--text-muted);
+}
+
+.suggested-tile-protocol {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.suggested-tile-url {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--accent);
+  text-decoration: none;
+  word-break: break-all;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.suggested-tile-url:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
+.suggested-tile-url-arrow {
+  font-size: 0.8rem;
+  opacity: 0.85;
+}
+
+.suggested-tile-probe {
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.suggested-tile-probe--success {
+  color: var(--text-secondary);
+}
+
+.suggested-tile-probe--success::before {
+  content: '';
+  display: inline-block;
+  width: 0.4em;
+  height: 0.4em;
+  margin-right: 0.35em;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: 0.15em;
+}
+
+.suggested-tile-probe--no-response {
+  color: var(--text-muted);
+}
+
+.suggested-tile-probe--no-response::before {
+  content: '';
+  display: inline-block;
+  width: 0.4em;
+  height: 0.4em;
+  margin-right: 0.35em;
+  border-radius: 50%;
+  background: var(--text-muted);
+  vertical-align: 0.15em;
+}
+
+.suggested-tile-probe--checking {
+  color: var(--text-muted);
+}
+
+.suggested-tile-probe--checking::before {
+  content: '';
+  display: inline-block;
+  width: 0.4em;
+  height: 0.4em;
+  margin-right: 0.35em;
+  border-radius: 50%;
+  background: var(--accent);
+  opacity: 0.7;
+  vertical-align: 0.15em;
+  animation: suggested-tile-probe-pulse 1s ease-in-out infinite;
+}
+
+@keyframes suggested-tile-probe-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+.suggested-tile-dev-server-notice {
+  display: inline-block;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--dev-notice-text, #e9d5ff);
+  background: var(--dev-notice-bg, rgba(126, 34, 206, 0.35));
+  border: 1px solid var(--dev-notice-border, rgba(167, 139, 250, 0.5));
+  border-radius: var(--radius-sm);
+  padding: 0.4rem 0.65rem;
+  margin-top: 0.15rem;
+}
+
+.suggested-tile-meta .badge-ssl {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem 0.4rem;
+  background: var(--ssl-badge-bg, rgba(34, 197, 94, 0.15));
+  color: var(--ssl-badge, #22c55e);
+  border: none;
+}
+
+.suggested-tile-meta .badge-ssl svg {
+  display: block;
+}
+
+.suggested-tile-add {
+  margin-top: 0.35rem;
+  align-self: flex-start;
+  padding: 0.45rem 0.9rem;
+  font-size: 0.9rem;
+  font-weight: 500;
+  font-family: var(--font-sans);
+  background: var(--accent);
+  color: var(--bg);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+}
+
+.suggested-tile-add:hover {
+  background: var(--accent-hover);
+}
+
+.suggested-tile-add:active {
+  transform: scale(0.98);
+}

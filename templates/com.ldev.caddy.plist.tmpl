@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  ldev — generated file. Installed to /Library/LaunchDaemons/com.ldev.caddy.plist
+
+  A LaunchDaemon, not a LaunchAgent: ports 80 and 443 are privileged, so this has
+  to start as root at boot rather than at login. Caddy drops nothing itself, but
+  it only needs root to bind the sockets.
+
+  Manage it with:
+    sudo launchctl bootout   system/com.ldev.caddy
+    sudo launchctl bootstrap system /Library/LaunchDaemons/com.ldev.caddy.plist
+-->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.ldev.caddy</string>
+
+	<key>ProgramArguments</key>
+	<array>
+		<string>__CADDY_BIN__</string>
+		<string>run</string>
+		<string>--config</string>
+		<string>__CADDYFILE__</string>
+	</array>
+
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+
+	<!-- Caddy stores its CA and certificates here. Without this it would use
+	     root's home, and `caddy trust` run as your user would trust a different
+	     CA than the one actually issuing certificates. -->
+	<key>EnvironmentVariables</key>
+	<dict>
+		<key>HOME</key>
+		<string>__HOME__</string>
+		<key>XDG_DATA_HOME</key>
+		<string>__HOME__/Library/Application Support</string>
+	</dict>
+
+	<key>StandardOutPath</key>
+	<string>__LOGDIR__/caddy.out.log</string>
+	<key>StandardErrorPath</key>
+	<string>__LOGDIR__/caddy.err.log</string>
+
+	<key>ProcessType</key>
+	<string>Interactive</string>
+</dict>
+</plist>

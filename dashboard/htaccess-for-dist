@@ -1,0 +1,6 @@
+# Ensure api.php is executed by PHP and not rewritten to index.html by SPA fallback rules.
+<IfModule mod_rewrite.c>
+RewriteEngine On
+RewriteCond %{REQUEST_URI} ^/api\.php [NC]
+RewriteRule ^ - [L]
+</IfModule>

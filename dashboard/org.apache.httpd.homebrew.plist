@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>org.apache.httpd.homebrew</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/opt/homebrew/opt/httpd/bin/httpd</string>
+		<string>-f</string>
+		<string>/opt/homebrew/etc/httpd/httpd.conf</string>
+		<string>-D</string>
+		<string>FOREGROUND</string>
+	</array>
+	<key>WorkingDirectory</key>
+	<string>/opt/homebrew/opt/httpd</string>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<key>StandardOutPath</key>
+	<string>/opt/homebrew/var/log/httpd/launchd_stdout.log</string>
+	<key>StandardErrorPath</key>
+	<string>/opt/homebrew/var/log/httpd/launchd_stderr.log</string>
+</dict>
+</plist>

@@ -1,0 +1,341 @@
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+}
+
+.modal-backdrop {
+  position: absolute;
+  inset: 0;
+  cursor: pointer;
+}
+
+.modal-content {
+  position: relative;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 0;
+  width: 100%;
+  max-width: 520px;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.45);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.35rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-title {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.modal-close {
+  width: 2.25rem;
+  height: 2.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 1.5rem;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: color 0.2s, background 0.2s;
+}
+
+.modal-close:hover {
+  color: var(--text-primary);
+  background: var(--elevated);
+}
+
+.modal-form {
+  padding: 1.5rem;
+}
+
+.modal-form .field {
+  margin-bottom: 1.25rem;
+}
+
+.modal-form .field:last-of-type {
+  margin-bottom: 1.5rem;
+}
+
+/* SSL (HTTP/HTTPS) – separate field */
+.field-ssl .protocol-toggle {
+  margin-bottom: 0;
+}
+
+/* Platform tiles */
+.field-platform {
+  margin-bottom: 1.5rem;
+}
+
+.field-label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 0.6rem;
+}
+
+.protocol-toggle {
+  display: flex;
+  gap: 0;
+  margin-bottom: 0.75rem;
+}
+
+.protocol-btn {
+  flex: 1;
+  max-width: 6rem;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  color: var(--text-secondary);
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: color 0.2s, background 0.2s, border-color 0.2s;
+}
+
+.protocol-btn:first-of-type {
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+}
+
+.protocol-btn:last-of-type {
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.protocol-btn + .protocol-btn {
+  border-left-width: 0;
+}
+
+.protocol-btn + .protocol-btn.protocol-btn--selected {
+  border-left-width: 1px;
+}
+
+.protocol-btn:hover {
+  color: var(--text-primary);
+  background: var(--card);
+}
+
+.protocol-btn--selected {
+  color: var(--accent);
+  background: var(--accent-muted);
+  border-color: var(--accent);
+  z-index: 1;
+}
+
+.protocol-btn--selected + .protocol-btn {
+  border-left-width: 1px;
+}
+
+.platform-tiles {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.6rem;
+}
+
+.platform-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.75rem 0.5rem;
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  color: var(--text-primary);
+  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+  min-height: 4rem;
+}
+
+.platform-tile:hover {
+  border-color: var(--border-hover);
+  background: var(--card);
+}
+
+.platform-tile--selected {
+  border-color: var(--accent);
+  background: var(--accent-muted);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+
+.platform-tile--selected:hover {
+  border-color: var(--accent-hover);
+  background: var(--accent-muted);
+}
+
+.platform-tile-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-secondary);
+}
+
+.platform-tile--selected .platform-tile-icon {
+  color: var(--accent);
+}
+
+.platform-tile-label {
+  font-size: 0.8rem;
+  font-weight: 500;
+  text-align: center;
+  line-height: 1.2;
+}
+
+.platform-tile-port {
+  font-size: 0.7rem;
+  font-family: var(--font-mono);
+  color: var(--text-muted);
+}
+
+.modal-form label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+  margin-bottom: 0.45rem;
+}
+
+.modal-form input,
+.modal-form select {
+  width: 100%;
+  padding: 0.7rem 1rem;
+  font-family: var(--font-sans);
+  font-size: 1rem;
+  color: var(--text-primary);
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  transition: border-color 0.2s;
+}
+
+.modal-form input::placeholder {
+  color: var(--text-muted);
+}
+
+.modal-form input:focus,
+.modal-form select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.modal-form select {
+  cursor: pointer;
+  appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%238b929e' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.75rem center;
+  padding-right: 2.25rem;
+}
+
+@media (max-width: 420px) {
+  .platform-tiles {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.field-checkbox {
+  margin-bottom: 1rem;
+}
+
+.modal-form .field-checkbox .checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 0;
+}
+
+.modal-form .field-checkbox .checkbox-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.modal-form .field-checkbox .checkbox-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  flex-shrink: 0;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--elevated);
+  transition: border-color 0.2s, background 0.2s, box-shadow 0.2s;
+}
+
+.modal-form .field-checkbox .checkbox-label:hover .checkbox-box {
+  border-color: var(--border-hover);
+}
+
+.modal-form .field-checkbox .checkbox-input:focus-visible + .checkbox-box {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.modal-form .field-checkbox .checkbox-input:checked + .checkbox-box {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.modal-form .field-checkbox .checkbox-box .checkbox-check {
+  width: 0.875rem;
+  height: 0.875rem;
+  color: var(--bg);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.modal-form .field-checkbox .checkbox-input:checked + .checkbox-box .checkbox-check {
+  opacity: 1;
+}
+
+.modal-form .field-checkbox .checkbox-text {
+  user-select: none;
+}
+
+.modal-form .field-checkbox .field-hint {
+  display: block;
+  margin-top: 0.35rem;
+  margin-left: 2.1rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.modal-actions {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}

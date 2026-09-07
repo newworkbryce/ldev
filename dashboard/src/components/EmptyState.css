@@ -1,0 +1,31 @@
+.empty-state {
+  text-align: center;
+  padding: 4rem 2rem;
+  background: var(--surface);
+  border: 2px dashed var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.empty-state-icon {
+  color: var(--text-muted);
+  margin-bottom: 1.5rem;
+  display: flex;
+  justify-content: center;
+}
+
+.empty-state-title {
+  font-size: 1.35rem;
+  font-weight: 600;
+  margin: 0 0 0.5rem;
+  color: var(--text-primary);
+}
+
+.empty-state-text {
+  margin: 0 0 1.5rem;
+  color: var(--text-secondary);
+  font-size: 1rem;
+}
+
+.btn-empty-add {
+  min-width: 160px;
+}

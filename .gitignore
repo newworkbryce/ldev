@@ -1,0 +1,14 @@
+node_modules/
+
+# Built at install time by install.sh, so it should not be committed — a stale
+# dist/ in the repo would ship one machine's build to every other machine.
+dashboard/dist/
+
+# Records where THIS machine keeps its dashboard config. Machine-specific.
+dashboard/data/config-path.json
+
+.DS_Store
+*.log
+
+# triaj session state, not part of the package
+.triaj/

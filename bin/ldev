@@ -1,0 +1,175 @@
+#!/usr/bin/env bash
+#
+# ldev — manage the local development TLD.
+#
+#   ldev doctor      check every layer separately and say which one is broken
+#   ldev list        sites discovered under the sites directory
+#   ldev new <name>  create a site directory (and an index.html if empty)
+#   ldev apply       re-render the server config from the template
+#   ldev restart     restart the server
+#   ldev status      is it running, and on what
+#   ldev config      print the saved configuration
+
+set -uo pipefail
+
+CONFIG_FILE="$HOME/.config/ldev/config"
+[ -f "$CONFIG_FILE" ] || { echo "ldev: not installed — run install.sh first (no $CONFIG_FILE)" >&2; exit 1; }
+# shellcheck disable=SC1090
+. "$CONFIG_FILE"
+
+BREW_PREFIX="$(brew --prefix 2>/dev/null || echo /opt/homebrew)"
+CADDYFILE="$HOME/.config/ldev/Caddyfile"
+
+if [ -t 1 ]; then
+  B=$'\033[1m'; R=$'\033[0m'; GRN=$'\033[32m'; RED=$'\033[31m'; YEL=$'\033[33m'; DIM=$'\033[2m'
+else
+  B=""; R=""; GRN=""; RED=""; YEL=""; DIM=""
+fi
+
+ok()   { printf '  %s✓%s %s\n' "$GRN" "$R" "$*"; }
+bad()  { printf '  %s✗%s %s\n' "$RED" "$R" "$*"; FAILED=1; }
+note() { printf '  %s·%s %s\n' "$YEL" "$R" "$*"; }
+fix()  { printf '      %s%s%s\n' "$DIM" "$*" "$R"; }
+
+cmd_doctor() {
+  FAILED=0
+  printf '\n%sldev doctor%s  — TLD .%s, mode %s\n\n' "$B" "$R" "$TLD" "$MODE"
+
+  # Each layer is checked on its own, because they fail independently and a
+  # working layer above a broken one is exactly what makes this confusing:
+  # DNS resolving while nothing listens on 443 looks like "DNS is broken".
+
+  printf '%sDNS%s\n' "$B" "$R"
+  local probe="ldev-doctor-probe.$TLD" ip
+  ip="$(dscacheutil -q host -a name "$probe" 2>/dev/null | awk '/^ip_address:/{print $2; exit}')"
+  if [ "$ip" = "127.0.0.1" ]; then
+    ok "*.$TLD resolves to 127.0.0.1 (tested $probe)"
+  else
+    bad "*.$TLD does not resolve${ip:+ (got $ip)}"
+    [ -f "/etc/resolver/$TLD" ] || fix "missing /etc/resolver/$TLD — echo 'nameserver 127.0.0.1' | sudo tee /etc/resolver/$TLD"
+    pgrep -x dnsmasq >/dev/null || fix "dnsmasq is not running — sudo brew services restart dnsmasq"
+  fi
+
+  printf '\n%sListeners%s\n' "$B" "$R"
+  local any=0
+  for p in 80 443; do
+    if nc -z 127.0.0.1 "$p" 2>/dev/null; then ok "port $p is listening"; any=1
+    else
+      if [ "$MODE" = "auto" ]; then bad "port $p is not listening"
+      else note "port $p is not listening (mode '$MODE' does not use it)"; fi
+    fi
+  done
+  if [ "$MODE" = "auto" ] && [ "$any" = 0 ]; then
+    fix "start the service — sudo launchctl bootstrap system /Library/LaunchDaemons/com.ldev.caddy.plist"
+  fi
+
+  printf '\n%sPHP%s\n' "$B" "$R"
+  local host="${PHP_FPM%:*}" port="${PHP_FPM##*:}"
+  if nc -z "$host" "$port" 2>/dev/null; then ok "PHP-FPM answering on $PHP_FPM"
+  else
+    bad "nothing on $PHP_FPM — PHP sites will return an empty page"
+    fix "brew services start php"
+  fi
+
+  printf '\n%sConfig%s\n' "$B" "$R"
+  if [ "$MODE" = "auto" ]; then
+    if [ -f "$CADDYFILE" ]; then
+      if caddy validate --config "$CADDYFILE" >/dev/null 2>&1; then ok "Caddyfile validates"
+      else bad "Caddyfile is invalid"; fix "caddy validate --config $CADDYFILE"; fi
+    else
+      bad "no Caddyfile at $CADDYFILE"; fix "ldev apply"
+    fi
+  fi
+  [ -d "$SITES" ] && ok "sites directory $SITES" || bad "missing sites directory $SITES"
+  [ -f "$DASHBOARD/index.html" ] && ok "dashboard built" || { bad "dashboard not built"; fix "cd $REPO_DIR/dashboard && npm run build"; }
+
+  printf '\n%sEnd to end%s\n' "$B" "$R"
+  local code
+  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "https://$TLD/" 2>/dev/null)"
+  if [ "$code" = "200" ]; then ok "https://$TLD/ returned 200"
+  elif [ "$code" = "000" ]; then bad "https://$TLD/ did not connect"
+  else note "https://$TLD/ returned $code"; fi
+
+  printf '\n'
+  [ "$FAILED" = 0 ] && printf '%sAll checks passed.%s\n\n' "$GRN" "$R" || printf '%sSome checks failed — see the hints above.%s\n\n' "$RED" "$R"
+  return "$FAILED"
+}
+
+cmd_list() {
+  printf '\n%sSites in %s%s\n\n' "$B" "$SITES" "$R"
+  local found=0
+  for d in "$SITES"/*."$TLD"; do
+    [ -d "$d" ] || continue
+    found=1
+    local name kind
+    name="$(basename "$d")"
+    if   [ -f "$d/wp-config.php" ]; then kind="WordPress"
+    elif [ -f "$d/index.php" ];     then kind="PHP"
+    elif [ -f "$d/index.html" ];    then kind="static"
+    else                                 kind="${YEL}no index${R}"; fi
+    printf '  %-40s %-12s https://%s/\n' "$name" "$kind" "$name"
+  done
+  [ "$found" = 0 ] && printf '  (none yet — ldev new <name>)\n'
+  printf '\n'
+}
+
+cmd_new() {
+  local name="${1:?usage: ldev new <name>}"
+  name="${name%.$TLD}"
+  local dir="$SITES/$name.$TLD"
+  [ -d "$dir" ] && { echo "ldev: $dir already exists"; exit 1; }
+  mkdir -p "$dir"
+  cat > "$dir/index.html" <<EOF
+<!doctype html>
+<meta charset="utf-8">
+<title>$name.$TLD</title>
+<body style="font:16px/1.6 system-ui;margin:4rem auto;max-width:34rem">
+<h1>$name.$TLD</h1>
+<p>Created by <code>ldev new</code>. Replace this file with your site.</p>
+</body>
+EOF
+  echo "created $dir"
+  echo "        https://$name.$TLD/"
+  # No restart needed: the server resolves the directory per request, so a new
+  # folder is live immediately.
+}
+
+cmd_apply() {
+  [ "$MODE" = "auto" ] || { echo "ldev: apply only applies to mode 'auto' (this install is '$MODE')"; exit 1; }
+  sed -e "s|__TLD__|$TLD|g" -e "s|__SITES__|$SITES|g" -e "s|__DASHBOARD__|$DASHBOARD|g" \
+      -e "s|__PHP_FPM__|$PHP_FPM|g" -e "s|__ADMIN_PORT__|$ADMIN_PORT|g" \
+      -e "s|__ASK_PORT__|$ASK_PORT|g" -e "s|__LOGDIR__|$LOGDIR|g" \
+      "$REPO_DIR/templates/Caddyfile.auto.tmpl" > "$CADDYFILE"
+  echo "wrote $CADDYFILE"
+  caddy validate --config "$CADDYFILE" >/dev/null 2>&1 && echo "validates" || { echo "INVALID — not restarting"; exit 1; }
+  cmd_restart
+}
+
+cmd_restart() {
+  if [ "$MODE" = "auto" ]; then
+    echo "restarting (needs sudo)..."
+    sudo launchctl kickstart -k system/com.ldev.caddy && echo "restarted"
+  else
+    echo "mode '$MODE' has no single service to restart"
+  fi
+}
+
+cmd_status() {
+  printf '\n  TLD        .%s\n  Sites      %s\n  Mode       %s\n  Dashboard  %s\n\n' "$TLD" "$SITES" "$MODE" "$DASHBOARD"
+  if [ "$MODE" = "auto" ]; then
+    sudo launchctl print system/com.ldev.caddy 2>/dev/null | awk '/state =|pid =/{print "  "$0}' || echo "  service not loaded"
+  fi
+  printf '\n'
+}
+
+case "${1:-doctor}" in
+  doctor)  shift; cmd_doctor "$@" ;;
+  list|ls) shift; cmd_list "$@" ;;
+  new)     shift; cmd_new "$@" ;;
+  apply)   shift; cmd_apply "$@" ;;
+  restart) shift; cmd_restart "$@" ;;
+  status)  shift; cmd_status "$@" ;;
+  config)  cat "$CONFIG_FILE" ;;
+  -h|--help|help) sed -n '3,12p' "$0" | sed 's/^# \{0,1\}//' ;;
+  *) echo "ldev: unknown command '$1' (try: ldev help)" >&2; exit 1 ;;
+esac

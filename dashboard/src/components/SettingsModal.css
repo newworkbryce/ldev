@@ -1,0 +1,10 @@
+.settings-modal-content {
+  max-width: 440px;
+}
+
+.settings-modal-content .field-hint {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}

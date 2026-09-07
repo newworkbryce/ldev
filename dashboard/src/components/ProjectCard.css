@@ -1,0 +1,220 @@
+.project-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.35rem 1.5rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  grid-template-rows: auto auto;
+  gap: 0.5rem 1rem;
+  align-items: center;
+}
+
+.project-card-favicon {
+  grid-column: 1;
+  grid-row: 1 / -1;
+  align-self: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: var(--elevated);
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.project-card-favicon img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.project-card-favicon-fallback {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--elevated);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.project-card-favicon-fallback.is-visible {
+  opacity: 1;
+}
+
+.project-card:hover {
+  border-color: var(--border-hover);
+  box-shadow: var(--shadow);
+}
+
+.project-card-name {
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin: 0;
+  grid-column: 2;
+  grid-row: 1;
+  color: var(--text-primary);
+}
+
+.project-card-url-wrap {
+  grid-column: 2 / -1;
+  grid-row: 2;
+}
+
+.project-card-url {
+  font-family: var(--font-mono);
+  font-size: 0.9rem;
+  color: var(--accent);
+  text-decoration: none;
+  word-break: break-all;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.project-card-url:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
+.project-card-url-arrow {
+  font-size: 0.8rem;
+  opacity: 0.85;
+}
+
+.project-card-badges {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  grid-column: 3 / -1;
+  grid-row: 1;
+  justify-self: end;
+}
+
+.badge {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  background: var(--elevated);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+
+.badge-port {
+  color: var(--text-muted);
+}
+
+.badge-ssl {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.25rem 0.4rem;
+  background: var(--ssl-badge-bg, rgba(34, 197, 94, 0.15));
+  color: var(--ssl-badge, #22c55e);
+  border: none;
+}
+
+.badge-ssl svg {
+  display: block;
+}
+
+.badge-platform {
+  background: var(--accent-muted);
+  color: var(--accent);
+  border-color: transparent;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.badge-platform-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+.badge-platform-icon svg {
+  display: block;
+}
+
+.project-card-actions {
+  grid-column: 3 / -1;
+  grid-row: 2;
+  justify-self: end;
+  align-self: center;
+  display: flex;
+  gap: 0.25rem;
+}
+
+.project-card-actions .btn-icon {
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: color 0.2s, background 0.2s;
+}
+
+.project-card-actions .btn-icon svg {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+.project-card-actions .btn-edit:hover {
+  color: var(--accent);
+  background: var(--accent-muted);
+}
+
+.project-card-actions .btn-delete:hover {
+  color: var(--danger);
+  background: var(--danger-muted);
+}
+
+@media (max-width: 600px) {
+  .project-card {
+    grid-template-columns: auto 1fr;
+    grid-template-rows: auto auto auto auto;
+  }
+
+  .project-card-favicon {
+    grid-row: 1 / -1;
+  }
+
+  .project-card-name {
+    grid-column: 2;
+  }
+
+  .project-card-badges {
+    grid-column: 2;
+    grid-row: 2;
+    justify-self: start;
+  }
+
+  .project-card-url-wrap {
+    grid-column: 2;
+    grid-row: 3;
+  }
+
+  .project-card-actions {
+    grid-column: 2;
+    grid-row: 4;
+    justify-self: start;
+  }
+}

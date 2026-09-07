@@ -1,0 +1,21 @@
+.suggested-modal-content {
+  max-width: 720px;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.suggested-modal-body {
+  overflow-y: auto;
+  padding: 0 1.5rem 1.5rem;
+}
+
+.suggested-modal-empty {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
+.suggested-modal-body .suggested-projects-grid {
+  margin-top: 0;
+}

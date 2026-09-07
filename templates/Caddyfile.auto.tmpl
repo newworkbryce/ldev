@@ -1,0 +1,89 @@
+# ldev — generated file. Do not edit by hand; re-run `ldev install` or `ldev apply`.
+#
+# MODE: auto (one Caddy owns 80 + 443 for the whole TLD)
+#
+# How a request is served, with no per-site configuration:
+#   https://<name>.__TLD__  ->  __SITES__/<name>.__TLD__
+#   ...if that directory has an index.php  -> PHP via FastCGI
+#   ...if it has an index.html             -> static files
+#   ...if it does not exist                -> the dashboard (the fallback)
+#
+# So adding a site means creating a directory. Nothing else.
+
+{
+	admin localhost:__ADMIN_PORT__
+
+	# Caddy's own CA, kept on this machine. Each host gets its own certificate the
+	# first time it is requested, which is why no wildcard certificate is needed —
+	# and a wildcard is exactly what does NOT work here. mkcert's *.__TLD__ file
+	# carries specific SANs and browsers reject it for <name>.__TLD__ with
+	# ERR_CERT_COMMON_NAME_INVALID. Per-host issuance sidesteps that entirely.
+	local_certs
+
+	# Caddy refuses on-demand issuance without an ask endpoint, so that a public
+	# instance cannot be made to mint certificates for arbitrary hostnames. Here
+	# the endpoint is served by this same Caddy (below), so there is no second
+	# process to keep alive.
+	on_demand_tls {
+		ask http://127.0.0.1:__ASK_PORT__/check
+	}
+}
+
+# The ask endpoint. Local-only listener: it approves any host, which is correct
+# for a machine-local TLD that resolves only to 127.0.0.1.
+http://127.0.0.1:__ASK_PORT__ {
+	respond /check 200
+}
+
+# Every host under the TLD.
+*.__TLD__ {
+	tls {
+		on_demand
+	}
+
+	# {labels.1} is the label to the left of the TLD: for shop.__TLD__ it is "shop".
+	# A multi-label TLD would shift this index, which is why install.sh rejects one.
+	root * __SITES__/{labels.1}.__TLD__
+
+	encode gzip
+
+	# The file matcher resolves against the root set above, so these two answer
+	# "does a site directory exist for this hostname, and what kind is it?"
+	@php file /index.php
+	@static file /index.html
+
+	handle @php {
+		php_fastcgi __PHP_FPM__
+		file_server
+	}
+
+	handle @static {
+		file_server browse
+	}
+
+	# No directory for this hostname — hand it to the dashboard rather than a 404,
+	# so an unrecognised name tells you what IS configured.
+	handle {
+		root * __DASHBOARD__
+		php_fastcgi __PHP_FPM__
+		file_server
+	}
+
+	log {
+		output file __LOGDIR__/access.log {
+			roll_size 10MiB
+			roll_keep 3
+		}
+	}
+}
+
+# The bare TLD (http://__TLD__) is the dashboard's own address.
+__TLD__ {
+	tls {
+		on_demand
+	}
+	root * __DASHBOARD__
+	encode gzip
+	php_fastcgi __PHP_FPM__
+	file_server
+}
