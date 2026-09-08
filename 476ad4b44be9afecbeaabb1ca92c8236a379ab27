@@ -1,0 +1,188 @@
+{
+  "version": "0.1.0",
+  "id": "003d3b39-517c-499a-9528-dec6d4a53bd1",
+  "timestamp": "2026-09-08T11:32:37Z",
+  "vcs": {
+    "type": "git",
+    "revision": "476ad4b44be9afecbeaabb1ca92c8236a379ab27"
+  },
+  "tool": {
+    "name": "triaj",
+    "version": "1.3.1"
+  },
+  "files": [
+    {
+      "path": "bin/ldev",
+      "conversations": [
+        {
+          "url": "triaj:commit/476ad4b44be9afecbeaabb1ca92c8236a379ab27",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 116,
+              "end_line": 157,
+              "content_hash": "sha256:9a45a6b30af5778133015e56f84941d65258cfd464323d3ef446a57cf8a35dde",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 174,
+              "end_line": 201,
+              "content_hash": "sha256:8062fa6d997512d0decd2952e63239fca38464b86b481c99bfb8b391f12ad4bb",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "docs/persite.md",
+      "conversations": [
+        {
+          "url": "triaj:commit/476ad4b44be9afecbeaabb1ca92c8236a379ab27",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 1,
+              "end_line": 81,
+              "content_hash": "sha256:1b29f630cbee7b0d9c3efcb1e12108e3a38dd700d92ba4ff3af971ff3ef306cc",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "install.sh",
+      "conversations": [
+        {
+          "url": "triaj:commit/476ad4b44be9afecbeaabb1ca92c8236a379ab27",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 23,
+              "end_line": 24,
+              "content_hash": "sha256:b4d9a016ba67f84a337e1d7bbf944ca8f0dc27dbc3fc4aed48c8350c70e2371a",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 282,
+              "end_line": 286,
+              "content_hash": "sha256:33fa8d5d7f05b4650d7d645d8e0f7c93f64b0dafb05173e956cd05bb2353b713",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 308,
+              "end_line": 308,
+              "content_hash": "sha256:e21bf6592c9c342510373202873e249292aa2098892e978dfd33228811d5afb8",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "templates/Caddyfile.persite.tmpl",
+      "conversations": [
+        {
+          "url": "triaj:commit/476ad4b44be9afecbeaabb1ca92c8236a379ab27",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 1,
+              "end_line": 53,
+              "content_hash": "sha256:0d0708c1daabf970ccba30e0e0daa9a2431f1a58abc3b555810ccde815428632",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "test/persite-new.test.sh",
+      "conversations": [
+        {
+          "url": "triaj:commit/476ad4b44be9afecbeaabb1ca92c8236a379ab27",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 1,
+              "end_line": 62,
+              "content_hash": "sha256:edee3180ca34117da460322f03d0730363880aed4a9209b9eb89fa92d412b27c",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "test/persite-ports.test.sh",
+      "conversations": [
+        {
+          "url": "triaj:commit/476ad4b44be9afecbeaabb1ca92c8236a379ab27",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 1,
+              "end_line": 45,
+              "content_hash": "sha256:4d141531a41c71f2d2deed2789853c05ff0e03599f050210048c5c9acb81aeb1",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "triaj": {
+      "task": "Allocate persite site and admin ports in step, so the second site starts",
+      "status": "Unreviewed",
+      "agent": "claude-code",
+      "attribution_granularity": "commit"
+    }
+  }
+}
