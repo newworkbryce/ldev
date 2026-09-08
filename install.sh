@@ -20,7 +20,8 @@ TLD="ldev"
 SITES="$HOME/Sites"
 MODE=""                       # auto | persite | apache
 PHP_FPM="127.0.0.1:9000"
-ADMIN_PORT="2019"
+ADMIN_PORT="2019"           # persite: base of the admin-port run (2019, 2020, ...)
+SITE_PORT_BASE="8443"       # persite: base of the site-port run (8443, 8444, ...)
 ASK_PORT="2018"
 LOGDIR="$HOME/Library/Logs/ldev"
 ASSUME_YES=0
@@ -278,7 +279,11 @@ case "$MODE" in
     ;;
   persite)
     say "Per-site mode makes no global change."
-    say "Create a Caddyfile in each site directory; see docs/persite.md."
+    say "Each site gets its own Caddyfile and its own pair of ports:"
+    say "  ldev new <name>   writes it, allocating site $SITE_PORT_BASE+n and admin $ADMIN_PORT+n"
+    say "Both ports must be unique per site — two Caddy processes cannot share an"
+    say "admin port, and the second one exits at startup instead of warning."
+    say "See docs/persite.md."
     ;;
   apache)
     OUT="$BREW_PREFIX/etc/httpd/extra/httpd-vhosts-ldev.conf"
@@ -300,6 +305,7 @@ MODE=$MODE
 PHP_FPM=$PHP_FPM
 DASHBOARD=$DASHBOARD
 ADMIN_PORT=$ADMIN_PORT
+SITE_PORT_BASE=$SITE_PORT_BASE
 ASK_PORT=$ASK_PORT
 LOGDIR=$LOGDIR
 REPO_DIR=$REPO_DIR

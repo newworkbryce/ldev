@@ -113,6 +113,48 @@ cmd_list() {
   printf '\n'
 }
 
+# Ports already claimed by sibling site Caddyfiles, one per line.
+#
+# Read from the FILES, not from listening sockets: a site that is currently stopped still
+# owns its ports, and allocating around only what is running would hand a new site a pair
+# that collides the moment the old one starts again.
+persite_used_ports() {
+  grep -hoE '(admin localhost:|:)[0-9]{4,5}' "$SITES"/*."$TLD"/Caddyfile 2>/dev/null \
+    | grep -oE '[0-9]{4,5}$' | sort -un
+}
+
+# The next free (site, admin) pair, kept in step: 8443/2019, 8444/2020, ...
+#
+# Both must be free TOGETHER. Allocating them independently is exactly the bug this
+# exists to prevent: the site port increments, the admin port stays at the default, and
+# the second Caddy exits at startup because two processes cannot share an admin port.
+# That failure is silent — the site simply never comes up.
+persite_next_ports() {
+  local site_base="${SITE_PORT_BASE:-8443}" admin_base="${ADMIN_PORT:-2019}"
+  local used n site admin
+  used="$(persite_used_ports)"
+  for n in $(seq 0 200); do
+    site=$((site_base + n)); admin=$((admin_base + n))
+    printf '%s\n' "$used" | grep -qx "$site" && continue
+    printf '%s\n' "$used" | grep -qx "$admin" && continue
+    # Also skip anything currently bound by an unrelated process, so ldev never hands out
+    # a port something outside ldev already answers on.
+    #
+    # LDEV_SKIP_PORT_PROBE exists for tests: the probe reads the real machine, so a test
+    # asserting "the first pair is 8443/2019" fails on any machine already serving 8443 —
+    # which is every machine ldev is actually used on. Config-file scanning above is the
+    # deterministic half and is what the tests exercise.
+    if [ "${LDEV_SKIP_PORT_PROBE:-0}" != "1" ]; then
+      nc -z 127.0.0.1 "$site" 2>/dev/null && continue
+      nc -z 127.0.0.1 "$admin" 2>/dev/null && continue
+    fi
+    printf '%s %s\n' "$site" "$admin"
+    return 0
+  done
+  echo "ldev: no free site/admin port pair within 200 of $site_base/$admin_base" >&2
+  return 1
+}
+
 cmd_new() {
   local name="${1:?usage: ldev new <name>}"
   name="${name%.$TLD}"
@@ -129,9 +171,34 @@ cmd_new() {
 </body>
 EOF
   echo "created $dir"
-  echo "        https://$name.$TLD/"
-  # No restart needed: the server resolves the directory per request, so a new
-  # folder is live immediately.
+
+  # In auto mode a directory IS the whole site: one Caddy resolves it per request, so a
+  # new folder is live immediately and needs no config and no restart.
+  if [ "${MODE:-auto}" != "persite" ]; then
+    echo "        https://$name.$TLD/"
+    return 0
+  fi
+
+  # Per-site mode needs its own Caddyfile, and needs its two ports not to collide with
+  # any sibling's. Doing this by hand is what left the second site permanently down.
+  local ports site_port admin_port
+  ports="$(persite_next_ports)" || return 1
+  site_port="${ports% *}"; admin_port="${ports#* }"
+
+  sed -e "s|__NAME__|$name|g" -e "s|__TLD__|$TLD|g" -e "s|__SITE_DIR__|$dir|g" \
+      -e "s|__SITE_PORT__|$site_port|g" -e "s|__ADMIN_PORT__|$admin_port|g" \
+      -e "s|__PHP_FPM__|$PHP_FPM|g" -e "s|__LOGDIR__|$LOGDIR|g" \
+      "$REPO_DIR/templates/Caddyfile.persite.tmpl" > "$dir/Caddyfile"
+
+  if caddy validate --config "$dir/Caddyfile" >/dev/null 2>&1; then
+    echo "        wrote $dir/Caddyfile (site $site_port, admin $admin_port)"
+  else
+    echo "        ${YEL}wrote $dir/Caddyfile but it does NOT validate${R}" >&2
+    echo "        caddy validate --config $dir/Caddyfile" >&2
+    return 1
+  fi
+  echo "        https://$name.$TLD:$site_port/"
+  echo "        start it: cd $dir && caddy run"
 }
 
 cmd_apply() {
