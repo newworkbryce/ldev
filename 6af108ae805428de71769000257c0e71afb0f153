@@ -1,0 +1,195 @@
+{
+  "version": "0.1.0",
+  "id": "eb7f881c-76d7-490c-9c52-d15f7d33b4e8",
+  "timestamp": "2026-09-09T16:05:17Z",
+  "vcs": {
+    "type": "git",
+    "revision": "6af108ae805428de71769000257c0e71afb0f153"
+  },
+  "tool": {
+    "name": "triaj",
+    "version": "1.3.1"
+  },
+  "files": [
+    {
+      "path": "install.sh",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/eb23749b-b71d-44b3-ab30-5c8053a65845",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 195,
+              "end_line": 197,
+              "content_hash": "sha256:ca1ee20ffd766f3dec3733cbded0da5dac36849ad41f05a274bf4b9457c00e17",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 199,
+              "end_line": 201,
+              "content_hash": "sha256:9caa44208fc6f518b470a80991e75330647b7827424100b7d94e81aa755c828a",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 387,
+              "end_line": 390,
+              "content_hash": "sha256:f3c2c667534d05e939c3ea7219e23750a9709f30f4695ff104ecf633dee06a47",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 394,
+              "end_line": 396,
+              "content_hash": "sha256:00b29b503f238b2667b269504d0f53d71569e41072195fa947b1e080cab01a6d",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 427,
+              "end_line": 429,
+              "content_hash": "sha256:3b472a9aede0bfc7bed25ddc114dd1468b719c74e7caaf55071a00958c0f3f89",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 462,
+              "end_line": 468,
+              "content_hash": "sha256:4c8845219500e93a665d6675f42185f3eb6553f6f8116f877d107372fbf1573c",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 490,
+              "end_line": 492,
+              "content_hash": "sha256:a07f2fae06ff28b4e4c97902e5a1143ca219c9518b1cd5a72f384fd610898b33",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 503,
+              "end_line": 507,
+              "content_hash": "sha256:b941bfcc8a2049f32ee3c59d97f9fb396fba4b2aba6798b4513152e7dbccd079",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 698,
+              "end_line": 698,
+              "content_hash": "sha256:36a53b712ded1ca60ae71c2d5ff559890bbdda7491d3af4d9efc6350f0791640",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 700,
+              "end_line": 700,
+              "content_hash": "sha256:7075a0de50af3f47c413c6f1066f5823e18b7e65ba376d5e7c5ac3fa7ccc7663",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 703,
+              "end_line": 703,
+              "content_hash": "sha256:294027bf77678aea277b1dfa553f44440cef6aa9e84c7fd2c55e6476161c30f9",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 756,
+              "end_line": 756,
+              "content_hash": "sha256:f497b2a928382ed49ce5564466e035442ddb3ffa785ddf8335af53c27032d4ca",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "test/tui-menu.test.sh",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/eb23749b-b71d-44b3-ab30-5c8053a65845",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 392,
+              "end_line": 405,
+              "content_hash": "sha256:f43e41d25016c514a358bb624bbfd1b8c3643c8ad3c380b7bfd36990544abea4",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 424,
+              "end_line": 436,
+              "content_hash": "sha256:4d6481f47f3e5163490b5bc85ab1be18c58cd2f87a200b216e33aed39cb4853c",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 605,
+              "end_line": 619,
+              "content_hash": "sha256:6a6e80cebfc3e97d2fd9dda63043f5d84b3743a6032295ada1fcb61be68da097",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 621,
+              "end_line": 621,
+              "content_hash": "sha256:672cafd9315b895bfaf94905bb90174299793b939c7c826a01d660375bd10a22",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "triaj": {
+      "task": "Find and tidy the installation being replaced, and enable the launchd label",
+      "status": "Waiting",
+      "agent": "claude-code",
+      "attribution_granularity": "commit"
+    }
+  }
+}
