@@ -4,8 +4,8 @@
 #
 #   ./install.sh                 interactive
 #   ./install.sh --defaults      accept every default, prompt for nothing
-#   ./install.sh --tld test --sites ~/Code --mode auto --yes
-#   ./install.sh --mode persite --skip-dns   leave /etc/resolver and dnsmasq alone
+#   ./install.sh --tld test --sites ~/Code --yes
+#   ./install.sh --skip-dns      leave /etc/resolver and dnsmasq alone
 #
 # Everything it writes is listed at the end, and every root-owned change is
 # announced before it happens.
@@ -19,11 +19,10 @@ CONFIG_FILE="$HOME/.config/ldev/config"
 # Defaults. Every one of these is overridable by flag or prompt.
 TLD="ldev"
 SITES="$HOME/Sites"
-MODE=""                       # auto | persite | apache
 SKIP_DNS=0                    # --skip-dns: leave /etc/resolver and dnsmasq alone
 PHP_FPM="127.0.0.1:9000"
-ADMIN_PORT="2019"           # persite: base of the admin-port run (2019, 2020, ...)
-SITE_PORT_BASE="8443"       # persite: base of the site-port run (8443, 8444, ...)
+ADMIN_PORT="2019"           # the wildcard server's own admin API
+SITE_PORT_BASE="8443"       # base of the run a standalone site's port is taken from
 ASK_PORT="2018"
 LOGDIR="$HOME/Library/Logs/ldev"
 ASSUME_YES=0
@@ -77,12 +76,15 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --tld)      TLD="${2:?--tld needs a value}"; shift 2 ;;
     --sites)    SITES="${2:?--sites needs a value}"; shift 2 ;;
-    --mode)     MODE="${2:?--mode needs a value}"; shift 2 ;;
+    # There is one serving mode now, so this flag has no answer to accept. Failing loudly
+    # beats ignoring it: a script passing `--mode persite` was asking for an install with
+    # nothing on 80/443, and silently giving it the opposite is worse than stopping.
+    --mode)     die "--mode is gone: ldev now has a single serving mode. A site that needs its own server gets one with 'ldev standalone <name>', fronted by the wildcard server." ;;
     --php-fpm)  PHP_FPM="${2:?--php-fpm needs a value}"; shift 2 ;;
     --yes|-y)   ASSUME_YES=1; shift ;;
     --skip-dns) SKIP_DNS=1; shift ;;
     --defaults) USE_DEFAULTS=1; ASSUME_YES=1; shift ;;
-    -h|--help)  sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)  sed -n '3,$p' "$0" | sed -n '/^#/!q; s/^# \{0,1\}//p'; exit 0 ;;
     *)          die "unknown option: $1 (try --help)" ;;
   esac
 done
@@ -112,39 +114,11 @@ case "$TLD" in
     ;;
 esac
 
-if [ -z "$MODE" ]; then
-  cat <<EOF
-
-How should sites be served?
-
-  ${B}1) auto${R}     One Caddy owns ports 80 and 443 for *.${TLD}.
-              A directory at ${SITES}/<name>.${TLD} is served at
-              https://<name>.${TLD} with a certificate issued on first
-              request. Unknown names fall back to the dashboard.
-              ${DIM}Adding a site = creating a folder. Recommended.${R}
-
-  ${B}2) persite${R}  One Caddy per site on its own high port (8443, 8444, ...).
-              Nothing owns 443. Each site needs its own Caddyfile and
-              certificate. ${DIM}Choose this to preserve an existing per-site setup.${R}
-
-  ${B}3) apache${R}   httpd vhosts, first-vhost-per-port as the fallback.
-              ${DIM}Choose this if you already run Apache and want to keep it.${R}
-
-EOF
-  case "$(ask "Mode (1/2/3)" "1")" in
-    1|auto)    MODE="auto" ;;
-    2|persite) MODE="persite" ;;
-    3|apache)  MODE="apache" ;;
-    *) die "pick 1, 2 or 3." ;;
-  esac
-fi
-
 DASHBOARD="$REPO_DIR/dashboard/dist"
 
 say ""
 say "  TLD          .$TLD"
 say "  Sites        $SITES"
-say "  Mode         $MODE"
 say "  PHP-FPM      $PHP_FPM"
 say "  Dashboard    $DASHBOARD"
 say ""
@@ -156,12 +130,13 @@ step "Dependencies"
 
 command -v brew >/dev/null 2>&1 || die "Homebrew is required: https://brew.sh"
 
+# mkcert is no longer among these. It was here for the per-site mode, where every site
+# needed a certificate of its own; the wildcard server issues one per host from Caddy's
+# internal CA on first request, so nothing in a default install calls mkcert at all.
 need=()
 command -v dnsmasq >/dev/null 2>&1 || need+=(dnsmasq)
-command -v mkcert  >/dev/null 2>&1 || need+=(mkcert)
-[ "$MODE" = "apache" ] && { command -v httpd >/dev/null 2>&1 || need+=(httpd); }
-[ "$MODE" != "apache" ] && { command -v caddy >/dev/null 2>&1 || need+=(caddy); }
-command -v php >/dev/null 2>&1 || need+=(php)
+command -v caddy   >/dev/null 2>&1 || need+=(caddy)
+command -v php     >/dev/null 2>&1 || need+=(php)
 
 if [ ${#need[@]} -gt 0 ]; then
   say "Missing: ${need[*]}"
@@ -229,17 +204,12 @@ fi
 
 step "Certificates"
 
-if [ "$MODE" = "auto" ]; then
-  # Caddy's internal CA issues per-host certs on demand; mkcert's CA is still
-  # installed so anything issued by hand is trusted too.
-  say "Mode 'auto' issues a certificate per host from Caddy's own CA."
-  say "Trusting Caddy's root (needs sudo, once):"
-  if confirm "Install Caddy's local CA into the system trust store?"; then
-    caddy trust || warn "caddy trust failed — sites will load but show a warning."
-  fi
-else
-  say "Installing the mkcert root CA (needs sudo, once):"
-  confirm "Run mkcert -install?" && mkcert -install || true
+# One certificate per host, issued from Caddy's own CA the first time that host is asked
+# for. Trusting the CA once is what makes every future site work with no certificate step.
+say "Each host gets its own certificate from Caddy's local CA, issued on first request."
+say "Trusting that CA (needs sudo, once):"
+if confirm "Install Caddy's local CA into the system trust store?"; then
+  caddy trust || warn "caddy trust failed — sites will load but show a warning."
 fi
 
 # ---------------------------------------------------------------- 5. dashboard
@@ -257,12 +227,31 @@ else
   warn "no dashboard/ directory in this repo — the fallback will 404."
 fi
 
-# ---------------------------------------------------------------- 6. server config
+# ---------------------------------------------------------------- 6. save the config
 
-step "Server configuration ($MODE)"
-
+# Written BEFORE the server config, because `ldev render` reads it. That ordering is also
+# what makes a half-finished run recoverable: the config file is the thing every later step
+# and every later `ldev` command depends on, so it should survive a failure further down.
 CADDY_BIN="$(command -v caddy || echo "$BREW_PREFIX/bin/caddy")"
 CADDYFILE="$HOME/.config/ldev/Caddyfile"
+
+cat > "$CONFIG_FILE" <<EOF
+# ldev — written by install.sh on $(date '+%Y-%m-%d %H:%M:%S')
+TLD=$TLD
+SITES=$SITES
+PHP_FPM=$PHP_FPM
+DASHBOARD=$DASHBOARD
+ADMIN_PORT=$ADMIN_PORT
+SITE_PORT_BASE=$SITE_PORT_BASE
+ASK_PORT=$ASK_PORT
+LOGDIR=$LOGDIR
+REPO_DIR=$REPO_DIR
+EOF
+say "wrote $CONFIG_FILE"
+
+# ---------------------------------------------------------------- 7. server config
+
+step "Server configuration"
 
 render() {
   sed -e "s|__TLD__|$TLD|g" \
@@ -278,70 +267,40 @@ render() {
       "$1"
 }
 
-case "$MODE" in
-  auto)
-    OUT="$HOME/.config/ldev/Caddyfile"
-    render "$REPO_DIR/templates/Caddyfile.auto.tmpl" > "$OUT"
-    say "wrote $OUT"
-    caddy validate --config "$OUT" >/dev/null 2>&1 \
-      && say "config validates" \
-      || warn "caddy could not validate the generated config — see: caddy validate --config $OUT"
+# `ldev render` rather than a render() call here, because the wildcard Caddyfile is not a
+# straight substitution any more: it carries a generated proxy block for every site that
+# runs its own server, and that generator lives in bin/ldev. Rendering it twice, in two
+# languages, is how the two would drift.
+"$REPO_DIR/bin/ldev" render || die "could not render $CADDYFILE"
 
-    say ""
-    say "Ports 80 and 443 are privileged, so Caddy needs to start via launchd as root."
-    if confirm "Install and start the ldev launchd service?"; then
-      PLIST=/Library/LaunchDaemons/com.ldev.caddy.plist
-      render "$REPO_DIR/templates/com.ldev.caddy.plist.tmpl" | sudo tee "$PLIST" >/dev/null
-      sudo chown root:wheel "$PLIST"; sudo chmod 644 "$PLIST"
-      sudo launchctl bootout system/com.ldev.caddy 2>/dev/null || true
-      sudo launchctl bootstrap system "$PLIST"
-      say "service started."
-    else
-      say ""
-      say "${YEL}Start it yourself with:${R}"
-      say "  sudo caddy run --config $OUT"
-    fi
-    ;;
-  persite)
-    say "Per-site mode makes no global change."
-    say "Each site gets its own Caddyfile and its own pair of ports:"
-    say "  ldev new <name>   writes it, allocating site $SITE_PORT_BASE+n and admin $ADMIN_PORT+n"
-    say "Both ports must be unique per site — two Caddy processes cannot share an"
-    say "admin port, and the second one exits at startup instead of warning."
-    say "See docs/persite.md."
-    ;;
-  apache)
-    OUT="$BREW_PREFIX/etc/httpd/extra/httpd-vhosts-ldev.conf"
-    render "$REPO_DIR/templates/httpd-vhosts.tmpl" > "$OUT"
-    say "wrote $OUT"
-    say "${YEL}Include it from httpd.conf and restart:${R}"
-    say "  echo 'Include $OUT' >> $BREW_PREFIX/etc/httpd/httpd.conf"
-    say "  sudo brew services restart httpd"
-    ;;
-esac
+say ""
+say "Ports 80 and 443 are privileged, so Caddy needs to start via launchd as root."
+if confirm "Install and start the ldev launchd service?"; then
+  PLIST=/Library/LaunchDaemons/com.ldev.caddy.plist
+  render "$REPO_DIR/templates/com.ldev.caddy.plist.tmpl" | sudo tee "$PLIST" >/dev/null
+  sudo chown root:wheel "$PLIST"; sudo chmod 644 "$PLIST"
+  sudo launchctl bootout system/com.ldev.caddy 2>/dev/null || true
+  sudo launchctl bootstrap system "$PLIST"
+  say "service started."
+else
+  say ""
+  say "${YEL}Nothing will answer on 80 or 443 until it runs. Start it yourself with:${R}"
+  say "  sudo caddy run --config $CADDYFILE"
+fi
 
-# ---------------------------------------------------------------- 7. save + report
-
-cat > "$CONFIG_FILE" <<EOF
-# ldev — written by install.sh on $(date '+%Y-%m-%d %H:%M:%S')
-TLD=$TLD
-SITES=$SITES
-MODE=$MODE
-PHP_FPM=$PHP_FPM
-DASHBOARD=$DASHBOARD
-ADMIN_PORT=$ADMIN_PORT
-SITE_PORT_BASE=$SITE_PORT_BASE
-ASK_PORT=$ASK_PORT
-LOGDIR=$LOGDIR
-REPO_DIR=$REPO_DIR
-EOF
+# ---------------------------------------------------------------- 8. report
 
 step "Done"
 cat <<EOF
 
   Config      $CONFIG_FILE
-  Dashboard   http://$TLD/
-  A new site  mkdir $SITES/<name>.$TLD   ->  https://<name>.$TLD
+  Dashboard   https://$TLD/          (and any name with no directory behind it)
+  A new site  mkdir $SITES/<name>    ->  https://<name>.$TLD
+              the .$TLD suffix on the directory is optional; both are served
+
+  Its own server, for a site that needs one — a different PHP version, its own
+  certificate, a proxy to a running app, restarts that leave the others alone:
+              $REPO_DIR/bin/ldev standalone <name>
 
   Check it:   $REPO_DIR/bin/ldev doctor
   Add bin to your PATH:

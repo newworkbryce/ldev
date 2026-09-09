@@ -21,27 +21,48 @@ cd ldev
 ./install.sh
 ```
 
-The installer asks four things — TLD, sites directory, serving mode, and whether
-to make the root-owned changes for you — then does the rest. Non-interactive:
+The installer asks three things — TLD, sites directory, and whether to make the
+root-owned changes for you — then does the rest. Non-interactive:
 
 ```sh
-./install.sh --tld test --sites ~/Code --mode auto --yes
+./install.sh --tld test --sites ~/Code --yes
 ./install.sh --defaults
 ```
 
-## Serving modes
+It needs ports 80 and 443, which on macOS means a root-owned launchd daemon.
+That is the one requirement: a machine where something else must keep those
+ports cannot run this.
 
-Chosen during install, because the right answer depends on what the machine
-already runs.
+## How a request is served
 
-| Mode | What it does | Choose it when |
-|---|---|---|
-| **auto** | One Caddy owns 80 and 443 for the whole TLD. Sites resolve by directory name; certificates are issued per host on first request; unknown hosts fall back to the dashboard. | Default. Nothing else needs those ports. |
-| **persite** | One Caddy per site on its own high port, each with its own Caddyfile and certificate. | You already have per-site servers and want to keep them. |
-| **apache** | httpd vhosts, with the first vhost per port acting as the fallback. | Apache is already the local web server. |
+One Caddy owns 80 and 443 for the whole TLD, and resolves every hostname under
+it from a single wildcard block:
 
-Only **auto** makes a new site work with no configuration. The other two are
-there so installing this does not tear down a setup that already works.
+| `https://shop.ldev` finds | it is served |
+|---|---|
+| `~/Sites/shop.ldev/` or `~/Sites/shop/` | from disk — PHP via FastCGI if there is an `index.php`, static files if there is an `index.html` |
+| a site running its own server | proxied to it, with the URL still portless |
+| nothing at all | by the dashboard, listing what you *do* have |
+
+The directory name may carry the TLD or not; both are served, so a repo cloned
+as `~/Sites/shop` needs no renaming. Certificates are issued per host from
+Caddy's own CA on first request, so a new site needs no certificate step.
+
+### When one site needs more
+
+A site needing what the shared server cannot express — a different PHP version,
+its own certificate, a proxy to an app already running, or restarts that leave
+its neighbours alone — runs its own Caddy on a high port and is fronted by the
+wildcard one:
+
+```sh
+ldev standalone shop
+```
+
+It keeps the portless URL, the certificate, and the dashboard fallback. This
+used to be an install-wide mode (`persite`) that gave up ports 80 and 443 — and
+with them the fallback and the clean URLs — for every site, to satisfy one.
+See [docs/standalone-sites.md](docs/standalone-sites.md).
 
 ## Commands
 
@@ -49,6 +70,8 @@ there so installing this does not tear down a setup that already works.
 ldev doctor      # check each layer separately and say which one is broken
 ldev list        # sites found under the sites directory, and their type
 ldev new <name>  # create a site directory, live immediately
+ldev standalone <name>  # give one site its own server, fronted by the wildcard one
+ldev render      # re-render the server config, without restarting
 ldev apply       # re-render the server config and restart
 ldev status      # is the service running
 ldev config      # print the saved configuration
@@ -70,8 +93,11 @@ Four layers, each replaceable:
    `/etc/hosts` entry is ever needed, including for hostnames that do not exist
    yet.
 2. **Routing** — one Caddy site block serves the whole TLD, deriving the document
-   root from the hostname (`{labels.1}`). A `file` matcher decides PHP, static, or
-   fallback.
+   root from the hostname (`{labels.1}`). `file` matchers decide PHP, static, or
+   fallback, and try both directory layouts — `<name>.<tld>` and bare `<name>` — so
+   the suffix is optional. A site running its own server gets a generated
+   `reverse_proxy` block ahead of the wildcard, which Caddy prefers because it
+   matches more specifically.
 3. **TLS** — Caddy's own CA issues a certificate per host on first request. It is
    deliberately *not* a wildcard certificate: a `*.<tld>` certificate is rejected
    by browsers for `<name>.<tld>` with `ERR_CERT_COMMON_NAME_INVALID`, which is a
@@ -89,7 +115,7 @@ its config lives outside the repo so a rebuild never overwrites it.
 ## Requirements
 
 macOS, Homebrew, and — installed for you if missing — `dnsmasq`, `caddy`,
-`mkcert`, `php`, plus `node` to build the dashboard.
+`php`, plus `node` to build the dashboard. Ports 80 and 443 must be free.
 
 ## What it changes on your machine
 
