@@ -1,0 +1,55 @@
+{
+  "version": "0.1.0",
+  "id": "07ad8af2-0e0e-4325-87d7-19c4657a2451",
+  "timestamp": "2026-09-09T15:50:35Z",
+  "vcs": {
+    "type": "git",
+    "revision": "e2d6954f9f46c462ce6d38c562f16eaa5dfbd800"
+  },
+  "tool": {
+    "name": "triaj",
+    "version": "1.3.1"
+  },
+  "files": [
+    {
+      "path": "test/tui-menu.test.sh",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/eb23749b-b71d-44b3-ab30-5c8053a65845",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 94,
+              "end_line": 94,
+              "content_hash": "sha256:a7d9967488e895afe513659532ee583aaf2d95231e48a2ae417ba68d85778828",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 96,
+              "end_line": 117,
+              "content_hash": "sha256:1095c2f7f9916c7c4210e31f5bf3ac1bfa2c403001cd8e4c8ccee2fea5520ae5",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "triaj": {
+      "task": "Trap every terminating signal, and test what can actually be tested",
+      "status": "Waiting",
+      "agent": "claude-code",
+      "attribution_granularity": "commit"
+    }
+  }
+}
