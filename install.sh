@@ -19,7 +19,7 @@ CONFIG_FILE="$HOME/.config/ldev/config"
 # Defaults. Every one of these is overridable by flag or prompt.
 TLD="ldev"
 SITES="$HOME/Sites"
-MODE=""                       # auto | persite | apache
+MODE=""                       # auto | persite
 SKIP_DNS=0                    # --skip-dns: leave /etc/resolver and dnsmasq alone
 PHP_FPM="127.0.0.1:9000"
 ADMIN_PORT="2019"           # persite: base of the admin-port run (2019, 2020, ...)
@@ -118,7 +118,7 @@ if [ -z "$MODE" ]; then
 How should sites be served?
 
   ${B}1) auto${R}     One Caddy owns ports 80 and 443 for *.${TLD}.
-              A directory at ${SITES}/<name>.${TLD} is served at
+              A directory at ${SITES}/<name> is served at
               https://<name>.${TLD} with a certificate issued on first
               request. Unknown names fall back to the dashboard.
               ${DIM}Adding a site = creating a folder. Recommended.${R}
@@ -127,17 +127,19 @@ How should sites be served?
               Nothing owns 443. Each site needs its own Caddyfile and
               certificate. ${DIM}Choose this to preserve an existing per-site setup.${R}
 
-  ${B}3) apache${R}   httpd vhosts, first-vhost-per-port as the fallback.
-              ${DIM}Choose this if you already run Apache and want to keep it.${R}
-
 EOF
-  case "$(ask "Mode (1/2/3)" "1")" in
+  case "$(ask "Mode (1/2)" "1")" in
     1|auto)    MODE="auto" ;;
     2|persite) MODE="persite" ;;
-    3|apache)  MODE="apache" ;;
-    *) die "pick 1, 2 or 3." ;;
+    *) die "pick 1 or 2." ;;
   esac
 fi
+
+# 'apache' was a third mode here and is not one any more: serving the TLD from httpd
+# needs a vhost and a certificate per host, which is a different product from "a folder
+# is a site". Refusing by name beats accepting a mode nothing downstream implements —
+# `ldev apply` would have had nothing to render and doctor nothing to check.
+[ "$MODE" = "apache" ] && die "mode 'apache' is not supported — use 'auto', or 'persite' to keep an existing per-site setup."
 
 DASHBOARD="$REPO_DIR/dashboard/dist"
 
@@ -159,8 +161,7 @@ command -v brew >/dev/null 2>&1 || die "Homebrew is required: https://brew.sh"
 need=()
 command -v dnsmasq >/dev/null 2>&1 || need+=(dnsmasq)
 command -v mkcert  >/dev/null 2>&1 || need+=(mkcert)
-[ "$MODE" = "apache" ] && { command -v httpd >/dev/null 2>&1 || need+=(httpd); }
-[ "$MODE" != "apache" ] && { command -v caddy >/dev/null 2>&1 || need+=(caddy); }
+command -v caddy >/dev/null 2>&1 || need+=(caddy)
 command -v php >/dev/null 2>&1 || need+=(php)
 
 if [ ${#need[@]} -gt 0 ]; then
@@ -310,14 +311,6 @@ case "$MODE" in
     say "admin port, and the second one exits at startup instead of warning."
     say "See docs/persite.md."
     ;;
-  apache)
-    OUT="$BREW_PREFIX/etc/httpd/extra/httpd-vhosts-ldev.conf"
-    render "$REPO_DIR/templates/httpd-vhosts.tmpl" > "$OUT"
-    say "wrote $OUT"
-    say "${YEL}Include it from httpd.conf and restart:${R}"
-    say "  echo 'Include $OUT' >> $BREW_PREFIX/etc/httpd/httpd.conf"
-    say "  sudo brew services restart httpd"
-    ;;
 esac
 
 # ---------------------------------------------------------------- 7. save + report
@@ -341,7 +334,8 @@ cat <<EOF
 
   Config      $CONFIG_FILE
   Dashboard   http://$TLD/
-  A new site  mkdir $SITES/<name>.$TLD   ->  https://<name>.$TLD
+  A new site  mkdir $SITES/<name>   ->  https://<name>.$TLD
+              (folders already named <name>.$TLD keep working too)
 
   Check it:   $REPO_DIR/bin/ldev doctor
   Add bin to your PATH:

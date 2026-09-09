@@ -34,6 +34,12 @@ echo "a gap is reused only when BOTH ports are free:"
 rm -rf "$SITES/a.ldev"
 check "reuses 8443/2019" "$(persite_next_ports)" "8443 2019"
 
+echo "a plain-named sibling counts too (folders no longer carry the TLD):"
+mkdir -p "$SITES/d"
+printf '{\n\tadmin localhost:2019\n}\n\nd.ldev:8443 {\n\troot * /x\n}\n' > "$SITES/d/Caddyfile"
+check "skips the plain sibling's pair" "$(persite_next_ports)" "8445 2021"
+rm -rf "$SITES/d"
+
 echo "admin port taken alone still blocks the pair:"
 mkdir -p "$SITES/c.ldev"
 printf '{\n\tadmin localhost:2019\n}\n\nc.ldev:9999 {\n\troot * /x\n}\n' > "$SITES/c.ldev/Caddyfile"
