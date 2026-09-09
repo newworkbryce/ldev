@@ -81,6 +81,16 @@ cmd_doctor() {
     fi
   fi
   [ -d "$SITES" ] && ok "sites directory $SITES" || bad "missing sites directory $SITES"
+
+  # `shop` and `shop.$TLD` are one hostname with two folders, and the plain one wins.
+  # Editing the shadowed folder and seeing nothing change is a long hour, so name it here.
+  local d base
+  for d in "$SITES"/*."$TLD"; do
+    [ -d "$d" ] || continue
+    base="$(basename "$d")"
+    [ -d "$SITES/${base%.$TLD}" ] \
+      && note "$base and ${base%.$TLD} are one hostname — https://$base/ serves ${base%.$TLD}"
+  done
   [ -f "$DASHBOARD/index.html" ] && ok "dashboard built" || { bad "dashboard not built"; fix "cd $REPO_DIR/dashboard && npm run build"; }
 
   printf '\n%sEnd to end%s\n' "$B" "$R"
@@ -93,11 +103,18 @@ cmd_doctor() {
   # the operator is asking is how you send somebody debugging something that was never wrong.
   if [ "$MODE" = "persite" ]; then
     local found=0
-    for f in "$SITES"/*."$TLD"/Caddyfile; do
+    for f in "$SITES"/*/Caddyfile; do
       [ -f "$f" ] || continue
       found=1
       local host port addr host_re
-      host="$(basename "$(dirname "$f")")"
+      # Both folder layouts, plain and .$TLD-suffixed, name the same host — and a folder
+      # whose name cannot be a hostname has no URL to probe, so say that instead of
+      # building a broken one.
+      host="$(site_host "$(dirname "$f")")"
+      if [ -z "$host" ]; then
+        note "$(basename "$(dirname "$f")") — the directory name cannot be a hostname"
+        continue
+      fi
       # Dots in the host would otherwise match any character in the pattern below.
       host_re="${host//./\\.}"
       # A Caddy address line can carry several hosts: `matsu.ldev, matsu-dev.ldev:8444 {`.
@@ -125,6 +142,7 @@ cmd_doctor() {
     if [ "$code" = "200" ]; then ok "https://$TLD/ returned 200"
     elif [ "$code" = "000" ]; then bad "https://$TLD/ did not connect"
     else note "https://$TLD/ returned $code"; fi
+
   fi
 
   printf '\n'
@@ -132,25 +150,23 @@ cmd_doctor() {
   return "$FAILED"
 }
 
-# The hostname a directory answers to, or empty if it can never answer to one.
+# The hostname a directory answers to, or EMPTY if it can never answer to one.
 #
-# Two layouts are served (see templates/Caddyfile.auto.tmpl): "shop.$TLD" names its host
-# outright, and bare "shop" gets the TLD appended. The suffix is therefore optional, and
-# this is the one place that decides which of the two a given directory is.
+# A folder is named for the site and nothing else ("shop"), but folders created before
+# that carry the TLD ("shop.ldev") and are still served, so both resolve to the same host.
 #
-# Empty is returned for a name that cannot BE a hostname. Caddy matches on the Host
-# header, which is lowercase and cannot contain a space, so "Scope Canvas AI" is not a
-# site that is merely misconfigured — there is no URL that reaches it. Lowercase alone is
+# Empty is for a name that cannot BE a hostname. Caddy matches on the Host header, which
+# is lowercase and cannot contain a space, so "Scope Canvas AI" is not a site that is
+# merely misconfigured — no URL reaches it, and printing one would be a lie. Case alone is
 # fine: macOS is case-insensitive by default, so ~/Sites/ClothingStore does answer to
-# clothingstore.$TLD, and the name is reported lowercased to match what you would type.
-dir_hostname() {
-  local name="$1"
+# clothingstore.$TLD, and it is reported lowercased to match what you would type.
+site_host() {
+  local name="${1##*/}"
   case "$name" in
-    *.$TLD) printf '%s' "$name"; return 0 ;;
-    *[!A-Za-z0-9.-]*) return 0 ;;
-    "") return 0 ;;
+    *."$TLD") printf '%s\n' "$name"; return 0 ;;
+    *[!A-Za-z0-9.-]*|"") return 0 ;;
   esac
-  printf '%s.%s' "$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')" "$TLD"
+  printf '%s.%s\n' "$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')" "$TLD"
 }
 
 cmd_list() {
@@ -158,21 +174,25 @@ cmd_list() {
   local found=0 skipped=0
   for d in "$SITES"/*; do
     [ -d "$d" ] || continue
-    local name kind host
+    local name host kind shadowed=""
     name="$(basename "$d")"
-    host="$(dir_hostname "$name")"
+    host="$(site_host "$d")"
     # Not a possible hostname — counted and summarised below rather than listed, so the
-    # listing stays a list of things you can open.
+    # listing stays a list of things you can actually open.
     [ -n "$host" ] || { skipped=$((skipped + 1)); continue; }
     found=1
     if   [ -f "$d/wp-config.php" ]; then kind="WordPress"
     elif [ -f "$d/index.php" ];     then kind="PHP"
     elif [ -f "$d/index.html" ];    then kind="static"
     else                                 kind="${YEL}no index${R}"; fi
-    printf '  %-40s %-12s https://%s/\n' "$name" "$kind" "$host"
+    # Two folders, one hostname: say which one is actually being served rather than
+    # printing the same URL twice and leaving the reader to guess.
+    [ "$name" != "${name%.$TLD}" ] && [ -d "$SITES/${name%.$TLD}" ] \
+      && shadowed="  ${YEL}(shadowed by ${name%.$TLD}/)${R}"
+    printf '  %-40s %-12s https://%s/%s\n' "$name" "$kind" "$host" "$shadowed"
   done
   [ "$found" = 0 ] && printf '  (none yet — ldev new <name>)\n'
-  [ "$skipped" -gt 0 ] && printf '\n  %s%s directory(s) skipped: the name cannot be a hostname (space or other\n  invalid character). Rename to reach them.%s\n' "$YEL" "$skipped" "$R"
+  [ "$skipped" -gt 0 ] && printf '\n  %s%s directory(s) skipped: the name cannot be a hostname (a space, or\n  another character a Host header cannot carry). Rename to reach them.%s\n' "$YEL" "$skipped" "$R"
   printf '\n'
 }
 
@@ -182,7 +202,7 @@ cmd_list() {
 # owns its ports, and allocating around only what is running would hand a new site a pair
 # that collides the moment the old one starts again.
 persite_used_ports() {
-  grep -hoE '(admin localhost:|:)[0-9]{4,5}' "$SITES"/*."$TLD"/Caddyfile 2>/dev/null \
+  grep -hoE '(admin localhost:|:)[0-9]{4,5}' "$SITES"/*/Caddyfile 2>/dev/null \
     | grep -oE '[0-9]{4,5}$' | sort -un
 }
 
@@ -228,8 +248,17 @@ cmd_new() {
     echo "ldev: '$name' is not a site name — letters, digits, dot, dash and underscore only" >&2
     exit 1
   }
-  local dir="$SITES/$name.$TLD"
+  # The folder is named for the site, with no .$TLD suffix: the hostname already supplies
+  # that, and repeating it in the directory name meant an existing project could not be
+  # served without renaming it first. A folder that IS suffixed still works, so an install
+  # made before this keeps serving — and is reused here rather than shadowed by a second,
+  # empty folder for the same hostname.
+  local dir="$SITES/$name"
   [ -d "$dir" ] && { echo "ldev: $dir already exists"; exit 1; }
+  [ -d "$SITES/$name.$TLD" ] && {
+    echo "ldev: $SITES/$name.$TLD already exists and is served at https://$name.$TLD/"
+    exit 1
+  }
   mkdir -p "$dir"
   cat > "$dir/index.html" <<EOF
 <!doctype html>

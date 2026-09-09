@@ -189,7 +189,7 @@ check "--help no longer offers apache" "$(printf '%s' "$help_out" | grep -ci apa
 # told the mode is gone by name, rather than getting "unknown mode" as if it
 # were a typo — and it must stop rather than quietly installing something else.
 apache_out="$("$SHELL_UNDER_TEST" "$REPO/install.sh" --mode apache --defaults --skip-dns 2>&1 || true)"
-check "--mode apache is refused by name" "$(printf '%s' "$apache_out" | grep -c "has been removed")" "1"
+check "--mode apache is refused by name" "$(printf '%s' "$apache_out" | grep -ci "mode 'apache' is not supported")" "1"
 check "--mode apache stops the install"  "$(printf '%s' "$apache_out" | grep -c 'Dependencies')"     "0"
 
 # ------------------------------------------------ the configuration phase, end to end

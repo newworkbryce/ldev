@@ -674,11 +674,16 @@ if [ -z "$MODE" ]; then
 fi
 case "$MODE" in
   auto|persite) ;;
-  # Named explicitly rather than folded into the catch-all: a script that still
-  # passes --mode apache should be told the mode is gone, not told it is a typo.
-  # It was removed because it never worked — the arm rendered a template that
-  # exists in no revision of this repo, so `set -e` killed the install there.
-  apache) die "mode 'apache' has been removed — it rendered a template that never existed. Use auto, or persite for a site that runs its own server." ;;
+  # Named explicitly rather than folded into the catch-all: a script that still passes
+  # --mode apache should be told the mode is gone, not told it is a typo.
+  #
+  # It is gone for two reasons, found independently on two branches. It never worked —
+  # the arm rendered templates/httpd-vhosts.tmpl, which exists in no revision of this
+  # repo, so `set -e` killed the install there. And it was never a fit: serving the TLD
+  # from httpd needs a vhost and a certificate per host, which is a different product
+  # from "a folder is a site". `ldev apply` would have had nothing to render and doctor
+  # nothing to check.
+  apache) die "mode 'apache' is not supported — use 'auto', or 'persite' to keep an existing per-site setup." ;;
   *) die "unknown mode '$MODE' — pick auto or persite." ;;
 esac
 
@@ -1007,6 +1012,7 @@ ui_wrote "$CONFIG_FILE"
 printf '\n'
 ui_kv "Dashboard" "http://$TLD/"
 ui_kv "A new site" "mkdir $SITES/<name>   ${C_DIM}->${C_R}  https://<name>.$TLD"
+ui_kv ""           "${C_DIM}folders already named <name>.$TLD keep working too${C_R}"
 ui_kv "Logs"       "$LOGDIR"
 printf '\n %sNext%s\n\n' "$C_B" "$C_R"
 ui_item "check every layer:  ${C_CYN}$REPO_DIR/bin/ldev doctor${C_R}"
