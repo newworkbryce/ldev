@@ -1,0 +1,114 @@
+{
+  "version": "0.1.0",
+  "id": "92c2e3a5-06ab-4507-9baa-8c23f941dab7",
+  "timestamp": "2026-09-09T08:44:18Z",
+  "vcs": {
+    "type": "git",
+    "revision": "da5de4fc31b2cc3ebc50c67838020ec9d1f02e5d"
+  },
+  "tool": {
+    "name": "triaj",
+    "version": "1.3.1"
+  },
+  "files": [
+    {
+      "path": "templates/Caddyfile.auto.tmpl",
+      "conversations": [
+        {
+          "url": "triaj:commit/da5de4fc31b2cc3ebc50c67838020ec9d1f02e5d",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 34,
+              "end_line": 37,
+              "content_hash": "sha256:1f5ffac2a6b0d51de2d59d0af859942bfca4ea31a8f340c6de3b2ab57a949368",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 39,
+              "end_line": 39,
+              "content_hash": "sha256:7ae1fe971f38b633b913b03ce19b202277a91998a679d5465c3db2c539310d25",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 45,
+              "end_line": 51,
+              "content_hash": "sha256:3300e97de11cc696b60ce70a4bbc25d5a3f216e054e0f10eb307c723fbb8aad1",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 142,
+              "end_line": 142,
+              "content_hash": "sha256:82ef925096a13a58315dfeaedaa37411b6452ff91b5b99e7645d0addac93df5c",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "templates/Caddyfile.persite.tmpl",
+      "conversations": [
+        {
+          "url": "triaj:commit/da5de4fc31b2cc3ebc50c67838020ec9d1f02e5d",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 22,
+              "end_line": 24,
+              "content_hash": "sha256:bedb7bac00c5142e4110ae9a5072485df8253e2aa7609ae40bc20967c8497194",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 27,
+              "end_line": 36,
+              "content_hash": "sha256:34c6f4a2bfe165a04ae896dd6dade4f5b682148c9c0af285c5f65c05034703c5",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 40,
+              "end_line": 56,
+              "content_hash": "sha256:966b90015ad547b4f70ade790fd55154769f30cfd131ab4d020661e18a0a24ee",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "triaj": {
+      "task": "Bind generated sites to loopback in both modes",
+      "status": "Completed",
+      "agent": "claude-code",
+      "attribution_granularity": "commit"
+    }
+  }
+}
