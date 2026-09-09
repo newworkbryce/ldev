@@ -1,0 +1,55 @@
+{
+  "version": "0.1.0",
+  "id": "0507cbe8-3e24-4f6c-966e-aeb2f00aa6e4",
+  "timestamp": "2026-09-09T08:12:30Z",
+  "vcs": {
+    "type": "git",
+    "revision": "ac418767ad3340cf3a79b6c992a276ef51f1c8f8"
+  },
+  "tool": {
+    "name": "triaj",
+    "version": "1.3.1"
+  },
+  "files": [
+    {
+      "path": "templates/Caddyfile.auto.tmpl",
+      "conversations": [
+        {
+          "url": "triaj:commit/ac418767ad3340cf3a79b6c992a276ef51f1c8f8",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 91,
+              "end_line": 95,
+              "content_hash": "sha256:36fa020d37ad99f1ff3e3a2e3bff3fb7ce562b4bef6d4bfd73cc04528553b7b1",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 121,
+              "end_line": 121,
+              "content_hash": "sha256:82ef925096a13a58315dfeaedaa37411b6452ff91b5b99e7645d0addac93df5c",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "triaj": {
+      "task": "Bind the .localhost blocks to loopback",
+      "status": "Completed",
+      "agent": "claude-code",
+      "attribution_granularity": "commit"
+    }
+  }
+}
