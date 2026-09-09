@@ -22,6 +22,10 @@ TLD="ldev"
 SITES="$HOME/Sites"
 MODE=""                       # auto | persite
 MODE_FROM_FLAG=0
+TLD_FROM_FLAG=0
+SITES_FROM_FLAG=0
+DO_SWITCH=0                   # --switch: take an existing, incompatible setup down first
+DO_UNINSTALL=0                # --uninstall: remove what ldev installed, then stop
 SKIP_DNS=0                    # --skip-dns: leave /etc/resolver and dnsmasq alone
 PHP_FPM="127.0.0.1:9000"
 ADMIN_PORT="2019"             # persite: base of the admin-port run (2019, 2020, ...)
@@ -46,6 +50,8 @@ Options
   --mode <mode>      auto | persite                        (default: asked)
   --php-fpm <addr>   PHP-FPM address                       (default: $PHP_FPM)
   --skip-dns         leave /etc/resolver and dnsmasq alone
+  --switch           take an existing, incompatible setup down first
+  --uninstall        remove what ldev installed, then stop
   -y, --yes          answer yes to every optional step
   --defaults         take every default and imply --yes
   --plain            no menus, colour or emoji (also: NO_COLOR=1)
@@ -57,11 +63,13 @@ EOF
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --tld)      TLD="${2:?--tld needs a value}"; shift 2 ;;
-    --sites)    SITES="${2:?--sites needs a value}"; shift 2 ;;
+    --tld)      TLD="${2:?--tld needs a value}"; TLD_FROM_FLAG=1; shift 2 ;;
+    --sites)    SITES="${2:?--sites needs a value}"; SITES_FROM_FLAG=1; shift 2 ;;
     --mode)     MODE="${2:?--mode needs a value}"; MODE_FROM_FLAG=1; shift 2 ;;
     --php-fpm)  PHP_FPM="${2:?--php-fpm needs a value}"; shift 2 ;;
     --yes|-y)   ASSUME_YES=1; shift ;;
+    --switch)   DO_SWITCH=1; shift ;;
+    --uninstall) DO_UNINSTALL=1; shift ;;
     --skip-dns) SKIP_DNS=1; shift ;;
     --defaults) USE_DEFAULTS=1; ASSUME_YES=1; shift ;;
     --plain)    LDEV_PLAIN=1; export LDEV_PLAIN; shift ;;
