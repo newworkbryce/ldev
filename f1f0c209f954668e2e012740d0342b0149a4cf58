@@ -1,0 +1,560 @@
+{
+  "version": "0.1.0",
+  "id": "1733e521-a02d-497a-954a-2357c900b32c",
+  "timestamp": "2026-09-09T15:33:29Z",
+  "vcs": {
+    "type": "git",
+    "revision": "f1f0c209f954668e2e012740d0342b0149a4cf58"
+  },
+  "tool": {
+    "name": "triaj",
+    "version": "1.3.1"
+  },
+  "files": [
+    {
+      "path": "install.sh",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/eb23749b-b71d-44b3-ab30-5c8053a65845",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 5,
+              "end_line": 7,
+              "content_hash": "sha256:13cba0621c194aba6553c20303e8523ad108c2f844eda35cf613a2bb39c41e0e",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 9,
+              "end_line": 9,
+              "content_hash": "sha256:b2490c678ec176e208bcb5284e3f2bac3dbba9d3844c11727d5d310bc815430d",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 17,
+              "end_line": 19,
+              "content_hash": "sha256:fe5787d398ae7cc7fde82a9be57af3c75dd69f178b53a99b9854665846eac28d",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 24,
+              "end_line": 24,
+              "content_hash": "sha256:48e925cd81c3fc1c6a796f464191dc2ab8a56855f6e6c3418cf77673fad5b685",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 27,
+              "end_line": 28,
+              "content_hash": "sha256:63d70592d89a252f03ed79950eacf4fff47f230fd4e6e024cb5beff15364a8fe",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 34,
+              "end_line": 54,
+              "content_hash": "sha256:3b03f08905ac110aa85d85e877c210589354fafff2f5232bda9ccbc0ab0da0e6",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 56,
+              "end_line": 78,
+              "content_hash": "sha256:ec90ff906d3986c0d50e08ce5c9ba446de27bc68a96de64dcce40ae46c7fe750",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 80,
+              "end_line": 80,
+              "content_hash": "sha256:25dc25e5c4c55dec1c2997c8bbf94268bfdae6efc8330a190eca1819ade5d54f",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 82,
+              "end_line": 82,
+              "content_hash": "sha256:288c2fd22f64a990821f0940c449c5571ff4c6c84e2bf26094e0aafca95227c2",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 84,
+              "end_line": 86,
+              "content_hash": "sha256:40cbec282853819ee6118a64450349552217a85393817bcb580f9c813e5f63b0",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 93,
+              "end_line": 96,
+              "content_hash": "sha256:fc7145197a7fb9cb46b3c4d3147a044e9f865a9c0affdb1aaed6b0f7a2164594",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 101,
+              "end_line": 101,
+              "content_hash": "sha256:d0a464f8051c583ef398fc82050407bfbbd9ba385bf1172bebb846462946e0dd",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 103,
+              "end_line": 104,
+              "content_hash": "sha256:2bf6320e2e3fcc4c39e0bca08f45f4396fcd4bca9bef002f610527bb8caa8dee",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 107,
+              "end_line": 108,
+              "content_hash": "sha256:17d729361564be0d90ce16229026ef92e5e9e4f29ff9c72e1b714c8f679a5896",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 112,
+              "end_line": 112,
+              "content_hash": "sha256:6ceb9d650c03e33f26af27218cd5fac8d9bdb2450741a4f7b2735d3dddf9b4a8",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 114,
+              "end_line": 114,
+              "content_hash": "sha256:1b9ecadd90ef4219dd1140851c71d9b287152da5d78b397d91999c901b17fa63",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 116,
+              "end_line": 122,
+              "content_hash": "sha256:31c36d1193232c1e538269c9bac826e47bbce3eed797ed6782955bab0a0a8972",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 124,
+              "end_line": 145,
+              "content_hash": "sha256:9047a050d8068ab3e4380b72c33498816dcddf89671327462dd4485d85b4249e",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 147,
+              "end_line": 178,
+              "content_hash": "sha256:16332a01ce84ae7be34535b7a644d284c45ece22537b74695190f82658a95528",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 180,
+              "end_line": 202,
+              "content_hash": "sha256:399e45cba92d2a31c16dec64db091cc8474c67d6848cc4c35a3c2d38443ab54d",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 204,
+              "end_line": 204,
+              "content_hash": "sha256:0a290d8569050605a2189206699268ce8789057b1bbf475d47941f70e91f13e7",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 206,
+              "end_line": 215,
+              "content_hash": "sha256:13f4f6834906834fdcdcda5d4a88b07b09bff1175b397072a7496cbdf2d0a863",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 217,
+              "end_line": 218,
+              "content_hash": "sha256:7d1b6ac2c9e18762ce9205b4c5e21a36e7c7c78fabf48d77a6ecfb3f8e94004a",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 220,
+              "end_line": 223,
+              "content_hash": "sha256:8ee5f6b443dc8378393784126b644984b9f269013bfd438622340d7892f2b704",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 227,
+              "end_line": 272,
+              "content_hash": "sha256:692d9ea218b2ada9d3b79f51eca9bc0dc3e4f59231da16356dc51ed3ede997d5",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 276,
+              "end_line": 276,
+              "content_hash": "sha256:fbc3efe033ff5168fc5593214a6b9c1073f986d1b169dd722ed00136a1611313",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 288,
+              "end_line": 290,
+              "content_hash": "sha256:a31cfddb7445edfe050e697bcf831ce108d529454fe71ff1151012ddabb0ad2f",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 296,
+              "end_line": 296,
+              "content_hash": "sha256:c96f80ada7b13c60b14ddb4a4a1b0a01ead61222d08095011bcdf72fc9cc7191",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 303,
+              "end_line": 303,
+              "content_hash": "sha256:325c2d59107de6f235ce963def878ea2b1053885ff7f7bc7a78c8b8c2febadbc",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 312,
+              "end_line": 312,
+              "content_hash": "sha256:eb340b0e341009f5720d9a8dec742f944901e87675eef964ca55b6f5a13e24b6",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 318,
+              "end_line": 318,
+              "content_hash": "sha256:1005812a63e4a0df29fafd70d996828b629b56d4574987ca52de06ce5e0e5452",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 322,
+              "end_line": 322,
+              "content_hash": "sha256:334359b90efed75da5f0ada1d5e6b256f4a6bd0aee7eb39c0f90182a021ffc8b",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 325,
+              "end_line": 326,
+              "content_hash": "sha256:f5ace33adcf9ff67bf6cce136741223d606c63f60fe26e9168038db6f767c30a",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 328,
+              "end_line": 328,
+              "content_hash": "sha256:1f0ff4f782307903a73d1f58f0e925c1b0b755dd459ca86ded9ae482b8962e56",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 330,
+              "end_line": 330,
+              "content_hash": "sha256:e40ce73655d01bb6f4da1f536dae56c9d612b5f683ff301f6dad1dade86659b2",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 332,
+              "end_line": 334,
+              "content_hash": "sha256:74b442e282db63a35911aed79c7aa90069adbae2a6ffe18e752cb2dc2985c893",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 338,
+              "end_line": 338,
+              "content_hash": "sha256:5fb69d71c11a66b23aac8a907719ee446745e8938f76793e9b958c86dd3bc230",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 340,
+              "end_line": 343,
+              "content_hash": "sha256:5c462ce102e827a73a020613050c6721007adfca0c1f343c76962eee4a3d78cd",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 349,
+              "end_line": 349,
+              "content_hash": "sha256:bbe4cf6e98421dd31e0e29df907a16d19410e827db795b2ed5fdd979127beb47",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 354,
+              "end_line": 359,
+              "content_hash": "sha256:c954cc6389fdf11328ce95033781669c7eeda624b12e988b1db4e977833c8072",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 362,
+              "end_line": 368,
+              "content_hash": "sha256:e258c594cb9a44a5e957fcae63eecc4338f2fd0b697c93bb3d2c00916f753a98",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 373,
+              "end_line": 376,
+              "content_hash": "sha256:d0f2bc944fbe66072f72f2450559683244564e694f93462f5665eb5a0ec7fa70",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 380,
+              "end_line": 381,
+              "content_hash": "sha256:b091b5cadd995605db8b9365896e1a11ae01a34d8808af7cce1353e666bb8a3b",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 383,
+              "end_line": 384,
+              "content_hash": "sha256:babc6a8519461ee47a66ff25678ab928ef325ade3070c750a963b6698c1099bd",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 386,
+              "end_line": 386,
+              "content_hash": "sha256:7867ada150a954e5f1812dc45e7a5780c874262baab645095355e36f7fb57d9a",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 391,
+              "end_line": 391,
+              "content_hash": "sha256:3b0562a19f9afc41d7e9545f12505ec3bde9a975a398f102cc75a41587bee5d9",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 414,
+              "end_line": 423,
+              "content_hash": "sha256:e3ea0b772e3c778d7366a9e7e31ac17e97491fc52bd926fcd6b3afe339040e7e",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 429,
+              "end_line": 429,
+              "content_hash": "sha256:ddc1b64c6dedd0793a76259e694e158d5d527f0816ca3f8f126eb3b3e6b45622",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 431,
+              "end_line": 432,
+              "content_hash": "sha256:a097673a2f6edd8b94e3255b790d469585edb6da854fbe2f65e1cebbb508d2ae",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 436,
+              "end_line": 441,
+              "content_hash": "sha256:29ca6d0ec5bbb82f4bedff926316ac078a01fa95423700018890a0a00e23a411",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 446,
+              "end_line": 449,
+              "content_hash": "sha256:26f42166e94583e7acab2d56ead6f664f6a1a1fbbccf95c0b28a7c48a9ad204a",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 455,
+              "end_line": 456,
+              "content_hash": "sha256:a76fbef7a89bef5d5ffcab4fe3a6ba6b068899a69530c087dded9cf786bc3279",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 470,
+              "end_line": 479,
+              "content_hash": "sha256:306fbf38fee8a424876da5f5d894a77a6980ca8863077a45edd2e420a6159e6a",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "lib/tui.sh",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/eb23749b-b71d-44b3-ab30-5c8053a65845",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 1,
+              "end_line": 343,
+              "content_hash": "sha256:4c3daf57e1f6443096bae78c058481dd868e21153cf1dc33b046bea3e8e0d65f",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "test/tui-menu.test.sh",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/eb23749b-b71d-44b3-ab30-5c8053a65845",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 1,
+              "end_line": 112,
+              "content_hash": "sha256:00ee5267e17971bbf122cc8f16603637ee6425c12b8ecc2c8602bc8b44540e27",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "triaj": {
+      "task": "Give the installer an arrow-key TUI with colour and emoji",
+      "status": "Unreviewed",
+      "agent": "claude-code",
+      "attribution_granularity": "commit"
+    }
+  }
+}
