@@ -53,7 +53,14 @@ tui_init() {
     # NO_COLOR is a preference rather than a capability, so it turns colour off
     # without costing the user the menus.
     [ -z "${NO_COLOR:-}" ] && TUI_COLOR=1
-    if exec 3<"${LDEV_TTY:-/dev/tty}" 2>/dev/null; then
+    # The braces matter. `exec 3<file 2>/dev/null` is an exec with no command,
+    # so *every* redirection on it is permanent: the 2>/dev/null meant to hide a
+    # failed open would send the whole run's stderr to /dev/null for good, and
+    # every die and every ui_warn after this line would vanish. Scoping it to a
+    # group keeps the fd-3 open permanent and the fd-2 silence temporary, while
+    # still catching the failure — an unopenable tty must leave us in plain mode,
+    # not kill the shell, which is what an uncaught exec redirection error does.
+    if { exec 3<"${LDEV_TTY:-/dev/tty}"; } 2>/dev/null; then
       TUI_INTERACTIVE=1
       trap 'tui_cleanup' EXIT
       trap 'tui_cleanup; printf "\n"; exit 130' INT TERM
