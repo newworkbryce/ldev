@@ -1,0 +1,141 @@
+{
+  "version": "0.1.0",
+  "id": "2111dbe4-e1c2-4600-b4b8-711d3e0e1afd",
+  "timestamp": "2026-09-09T15:57:58Z",
+  "vcs": {
+    "type": "git",
+    "revision": "f6967d0fefd1ca0aa624791b6a7a4885f7c1c0e2"
+  },
+  "tool": {
+    "name": "triaj",
+    "version": "1.3.1"
+  },
+  "files": [
+    {
+      "path": "install.sh",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/eb23749b-b71d-44b3-ab30-5c8053a65845",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 179,
+              "end_line": 186,
+              "content_hash": "sha256:37171eef2495575eb0a8cea57248e50ce94d9bb14b6beef6174b3b5293c1dcee",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 191,
+              "end_line": 191,
+              "content_hash": "sha256:da3c4fffdc81ea0d9803e04e56b3dc5263bf3aceed87305a60e931b8a47f5844",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 370,
+              "end_line": 381,
+              "content_hash": "sha256:d6a63277e9f79bf838635998b73c18f5413bcb933170a175d2f86a7fc909c095",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "test/tui-menu.test.sh",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/eb23749b-b71d-44b3-ab30-5c8053a65845",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 20,
+              "end_line": 30,
+              "content_hash": "sha256:8f735392bd08e43c4664c3dd5302f34184f93e4883ac5765a22d5efa0c70b544",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 160,
+              "end_line": 171,
+              "content_hash": "sha256:6f8dcbc6932f1461744ed226d43ae2de3044f409a952111dfd948fd14ceef4f6",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 209,
+              "end_line": 214,
+              "content_hash": "sha256:bd46cf6a9c048592f82ab9f9aff17e2c3ce1e044a186033a63b08f86a2fd4a90",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 237,
+              "end_line": 244,
+              "content_hash": "sha256:2a8854aaccbbabc3de16a026c56746caafad79ebbd9727d8c79ff0bed3043c3b",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 247,
+              "end_line": 247,
+              "content_hash": "sha256:9bd121fa117530c3cf36e9306223a1502819dd7031a1de612c9c1cd4bd04ae4b",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 249,
+              "end_line": 249,
+              "content_hash": "sha256:c7f1803366a48bde092b58b62e9383c5c60bf42bd17ba5d9898cd6778b7646f4",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 358,
+              "end_line": 587,
+              "content_hash": "sha256:c86be6c7d5ab869b9119b68ce8478b96e300c2dfccd6dfb7435752d1a2499ce2",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "triaj": {
+      "task": "Stop the port probe killing the install it was added to protect",
+      "status": "Waiting",
+      "agent": "claude-code",
+      "attribution_granularity": "commit"
+    }
+  }
+}
