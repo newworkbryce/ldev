@@ -1,0 +1,109 @@
+{
+  "version": "0.1.0",
+  "id": "45fc56c9-cfb0-47c7-b366-fdb749ba04bd",
+  "timestamp": "2026-09-09T15:51:56Z",
+  "vcs": {
+    "type": "git",
+    "revision": "7a7f4df9745894b3e9ef3953d443e2f574f4b74b"
+  },
+  "tool": {
+    "name": "triaj",
+    "version": "1.3.1"
+  },
+  "files": [
+    {
+      "path": "install.sh",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/eb23749b-b71d-44b3-ab30-5c8053a65845",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 129,
+              "end_line": 528,
+              "content_hash": "sha256:489417660ff31b285b04a167fcfaadbe4b6438f16e211b5479ec20d5aa64b5a1",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 629,
+              "end_line": 629,
+              "content_hash": "sha256:af9d33190edb06dbeb5a6b933b708f19b5040c36f97bb6fbb09dabe15bf3c656",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 632,
+              "end_line": 633,
+              "content_hash": "sha256:950379587fdf213369f37ef86923d6b88176d9ab63428acd74e4aa7b3a239999",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 666,
+              "end_line": 675,
+              "content_hash": "sha256:8d902dc8405fd5e0bf965c70164630e3a16d721050f84b9749198ae1832748f9",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 681,
+              "end_line": 682,
+              "content_hash": "sha256:23a3d49e2bd226c806d416fdae848d334b85c6a34c01bd80f929b7bbaa1e3ba7",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 713,
+              "end_line": 765,
+              "content_hash": "sha256:76a222e4ae08e28b2e1e46b8d2c7e427a0e54d3c0b254a8f086c693609a1f566",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 915,
+              "end_line": 915,
+              "content_hash": "sha256:24d0d49366f96a7e7457a43d6684b45c175148fd917fb1f16471b2298f7f80b4",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 918,
+              "end_line": 942,
+              "content_hash": "sha256:e1d197629200f1cecb01206d49863199c906deb501420ca91c015aff6433ce06",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "triaj": {
+      "task": "BROKEN: port_owner aborts the install before it asks anything",
+      "status": "Stuck",
+      "agent": "claude-code",
+      "attribution_granularity": "commit"
+    }
+  }
+}
