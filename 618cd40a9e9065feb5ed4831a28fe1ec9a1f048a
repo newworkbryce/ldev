@@ -1,0 +1,46 @@
+{
+  "version": "0.1.0",
+  "id": "e011f35c-aa19-4538-a2a9-53a727933fa7",
+  "timestamp": "2026-09-09T08:10:41Z",
+  "vcs": {
+    "type": "git",
+    "revision": "618cd40a9e9065feb5ed4831a28fe1ec9a1f048a"
+  },
+  "tool": {
+    "name": "triaj",
+    "version": "1.3.1"
+  },
+  "files": [
+    {
+      "path": "templates/Caddyfile.auto.tmpl",
+      "conversations": [
+        {
+          "url": "triaj:commit/618cd40a9e9065feb5ed4831a28fe1ec9a1f048a",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 80,
+              "end_line": 121,
+              "content_hash": "sha256:a33b95d59079ebafc12c365e86012553e4992eb75912a90c32bcfff117d574a7",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "triaj": {
+      "task": "Give every auto-mode site a .localhost origin over plain HTTP",
+      "status": "Completed",
+      "agent": "claude-code",
+      "attribution_granularity": "commit"
+    }
+  }
+}
