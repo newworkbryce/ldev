@@ -1,0 +1,69 @@
+{
+  "version": "0.1.0",
+  "id": "693afc15-5fb4-4785-a7dd-cf798530e65c",
+  "timestamp": "2026-09-09T15:41:50Z",
+  "vcs": {
+    "type": "git",
+    "revision": "0f18011a1883a70703d0b30af488ed4a74945079"
+  },
+  "tool": {
+    "name": "triaj",
+    "version": "1.3.1"
+  },
+  "files": [
+    {
+      "path": "lib/tui.sh",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/eb23749b-b71d-44b3-ab30-5c8053a65845",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 56,
+              "end_line": 63,
+              "content_hash": "sha256:2c54f73f79217c8a8381d1e08a2b13859fd16b50833af2f69e13a0f60761cfd7",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "test/tui-menu.test.sh",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/eb23749b-b71d-44b3-ab30-5c8053a65845",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 125,
+              "end_line": 275,
+              "content_hash": "sha256:6acce5919cf3f1fcd7547491218ffd93d3b4f71b14226312b2b313e9cd8a564a",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "triaj": {
+      "task": "Stop a bare exec silencing stderr, and test the installer end to end",
+      "status": "Waiting",
+      "agent": "claude-code",
+      "attribution_granularity": "commit"
+    }
+  }
+}
