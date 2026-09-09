@@ -64,6 +64,21 @@ inp='tui_input "Name" "ldev"; printf "%s" "$TUI_VALUE" >&4'
 check "typed value wins"          "$(drive "test$CR" "$inp")"                "test"
 check "empty line takes default"  "$(drive "$CR" "$inp")"                    "ldev"
 
+# End of input is not an empty line. A caller that re-asks after rejecting a
+# value has to be able to tell the two apart, or it re-asks forever: that is
+# exactly how the installer's TLD loop once spun at 100% CPU with its output
+# going nowhere anybody could see.
+eofin='if tui_input "Name" "ldev"; then printf "ok:%s" "$TUI_VALUE" >&4; else printf "eof:%s:%s" "$TUI_EOF" "$TUI_VALUE" >&4; fi'
+check "EOF is reported, not silently defaulted" "$(drive "" "$eofin")"       "eof:1:ldev"
+check "a last line with no newline still counts" "$(drive "test" "$eofin")"  "ok:test"
+check "an empty line is not EOF"  "$(drive "$CR" "$eofin")"                  "ok:ldev"
+
+# tui_input answers in TUI_VALUE and prompts on stdout, so capturing it with
+# $(...) would return the prompt glued to the answer. Prove the prompt is there
+# to be captured, so nobody "tidies up" the contract by accident.
+promptleak='tui_input "Local TLD" "ldev" >"'"$TMP"'/prompt"; grep -c "Local TLD" "'"$TMP"'/prompt" >&4'
+check "the prompt goes to stdout, the answer does not" "$(drive "test$CR" "$promptleak" | tr -d ' \n')" "1"
+
 echo "--- plain mode never reads a key"
 plain=$(LDEV_PLAIN=1 LDEV_TTY=/dev/null "$SHELL_UNDER_TEST" -c "
   set -uo pipefail
