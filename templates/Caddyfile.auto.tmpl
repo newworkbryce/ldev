@@ -77,6 +77,48 @@ http://127.0.0.1:__ASK_PORT__ {
 	}
 }
 
+# The same sites over plain HTTP at <name>.localhost.
+#
+# Browsers resolve *.localhost to loopback themselves — no DNS entry, no
+# certificate, nothing to trust. That matters because automated and preview
+# browsers (Claude, Playwright sandboxes, some CI images) refuse custom local
+# TLDs: the document loads but every subresource is blocked, so a JS app mounts
+# nothing and the failure looks like an application bug. Those tools can always
+# reach <name>.localhost, so every site has an origin that works headlessly.
+#
+# {labels.1} is the label left of "localhost": matsu.localhost -> matsu.
+http://*.localhost {
+	root * __SITES__/{labels.1}.__TLD__
+
+	encode gzip
+
+	@php file /index.php
+	@static file /index.html
+
+	handle @php {
+		php_fastcgi __PHP_FPM__
+		file_server
+	}
+
+	handle @static {
+		file_server browse
+	}
+
+	handle {
+		root * __DASHBOARD__
+		php_fastcgi __PHP_FPM__
+		file_server
+	}
+}
+
+# Bare http://localhost is the dashboard too.
+http://localhost {
+	root * __DASHBOARD__
+	encode gzip
+	php_fastcgi __PHP_FPM__
+	file_server
+}
+
 # The bare TLD (http://__TLD__) is the dashboard's own address.
 __TLD__ {
 	tls {
