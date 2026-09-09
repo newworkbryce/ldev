@@ -132,21 +132,47 @@ cmd_doctor() {
   return "$FAILED"
 }
 
+# The hostname a directory answers to, or empty if it can never answer to one.
+#
+# Two layouts are served (see templates/Caddyfile.auto.tmpl): "shop.$TLD" names its host
+# outright, and bare "shop" gets the TLD appended. The suffix is therefore optional, and
+# this is the one place that decides which of the two a given directory is.
+#
+# Empty is returned for a name that cannot BE a hostname. Caddy matches on the Host
+# header, which is lowercase and cannot contain a space, so "Scope Canvas AI" is not a
+# site that is merely misconfigured — there is no URL that reaches it. Lowercase alone is
+# fine: macOS is case-insensitive by default, so ~/Sites/ClothingStore does answer to
+# clothingstore.$TLD, and the name is reported lowercased to match what you would type.
+dir_hostname() {
+  local name="$1"
+  case "$name" in
+    *.$TLD) printf '%s' "$name"; return 0 ;;
+    *[!A-Za-z0-9.-]*) return 0 ;;
+    "") return 0 ;;
+  esac
+  printf '%s.%s' "$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]')" "$TLD"
+}
+
 cmd_list() {
   printf '\n%sSites in %s%s\n\n' "$B" "$SITES" "$R"
-  local found=0
-  for d in "$SITES"/*."$TLD"; do
+  local found=0 skipped=0
+  for d in "$SITES"/*; do
     [ -d "$d" ] || continue
-    found=1
-    local name kind
+    local name kind host
     name="$(basename "$d")"
+    host="$(dir_hostname "$name")"
+    # Not a possible hostname — counted and summarised below rather than listed, so the
+    # listing stays a list of things you can open.
+    [ -n "$host" ] || { skipped=$((skipped + 1)); continue; }
+    found=1
     if   [ -f "$d/wp-config.php" ]; then kind="WordPress"
     elif [ -f "$d/index.php" ];     then kind="PHP"
     elif [ -f "$d/index.html" ];    then kind="static"
     else                                 kind="${YEL}no index${R}"; fi
-    printf '  %-40s %-12s https://%s/\n' "$name" "$kind" "$name"
+    printf '  %-40s %-12s https://%s/\n' "$name" "$kind" "$host"
   done
   [ "$found" = 0 ] && printf '  (none yet — ldev new <name>)\n'
+  [ "$skipped" -gt 0 ] && printf '\n  %s%s directory(s) skipped: the name cannot be a hostname (space or other\n  invalid character). Rename to reach them.%s\n' "$YEL" "$skipped" "$R"
   printf '\n'
 }
 
