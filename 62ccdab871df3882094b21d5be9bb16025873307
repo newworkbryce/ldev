@@ -1,0 +1,109 @@
+{
+  "version": "0.1.0",
+  "id": "8da1a068-3003-4f9e-a599-c65b7985f9eb",
+  "timestamp": "2026-09-09T19:27:56Z",
+  "vcs": {
+    "type": "git",
+    "revision": "62ccdab871df3882094b21d5be9bb16025873307"
+  },
+  "tool": {
+    "name": "triaj",
+    "version": "1.3.1"
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/eb23749b-b71d-44b3-ab30-5c8053a65845",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 71,
+              "end_line": 87,
+              "content_hash": "sha256:f6727cc0edd289a7f7220c50df2e639616c99e22b35be4b4d247b712ef88e8f9",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 96,
+              "end_line": 100,
+              "content_hash": "sha256:c395041d4ffbb0b4ccca41d61905ba4b79268b09cbc0849bd634693aecf0a6cc",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 108,
+              "end_line": 110,
+              "content_hash": "sha256:432f8bdc995ef85ca0bb519eace98de4237d17d8c06341d97e047080d9b222c9",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 333,
+              "end_line": 333,
+              "content_hash": "sha256:774eacf636e7146dd99615e2bd8d31716a374961e97f18901a76f5f3b699da16",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 367,
+              "end_line": 367,
+              "content_hash": "sha256:ae09592477f62757e52bfb4f4c62c091d96f21ee3112ae77ffd20095360ef1c3",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 372,
+              "end_line": 379,
+              "content_hash": "sha256:c6d00939b42eea058d97e4320afa7b58e07c903659b4b2a6f68307f46412e1ce",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 384,
+              "end_line": 396,
+              "content_hash": "sha256:34fab36c258d615d165c4187f09b94ed5dced6815c496b366752fb6dda2355ff",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 400,
+              "end_line": 400,
+              "content_hash": "sha256:5d7a11327f9c0832cc280a617a0c155613b8890d0523410e2aa702e3180eda29",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "triaj": {
+      "task": "Document the installer the README now ships",
+      "status": "Waiting",
+      "agent": "claude-code",
+      "attribution_granularity": "commit"
+    }
+  }
+}
