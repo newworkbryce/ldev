@@ -6,6 +6,7 @@
 #   ldev list              sites discovered under the sites directory
 #   ldev new <name>        create a site directory — live immediately, no config
 #   ldev standalone <name> give one site its own server, fronted by the wildcard one
+#   ldev rehome <name>     move a WordPress site onto its portless URL
 #   ldev render            re-render the server config, without restarting
 #   ldev apply             re-render the server config and restart
 #   ldev restart           restart the server
@@ -390,6 +391,101 @@ $(site_servers)
 EOF
 }
 
+# Move a WordPress site off its old ported URL and onto the portless one.
+#
+# WordPress stores its own address in two places that must agree: the WP_HOME/WP_SITEURL
+# constants in wp-config.php, which win when present, and the database, where the old URL
+# is baked into post content, options, menus and widget settings. Changing only the
+# constants gives you a site that loads and then serves every image and link from a port
+# that no longer answers, which looks like a broken theme rather than a stale URL.
+#
+# The database half goes through `wp search-replace`, never SQL. WordPress stores arrays as
+# PHP-serialized strings whose length prefixes are counted in bytes, so replacing a longer
+# URL with a shorter one inside one of those corrupts the record: PHP reads the declared
+# length, overshoots, and the option comes back as false. Every plugin depending on it then
+# silently reverts to defaults. wp-cli unserializes, replaces, and reserializes instead.
+cmd_rehome() {
+  local name="${1:?usage: ldev rehome <name> [--yes]}" assume_yes=0
+  [ "${2:-}" = "--yes" ] && assume_yes=1
+  name="${name%.$TLD}"
+  require_site_name "$name"
+
+  local dir; dir="$(site_dir "$name")"
+  [ -n "$dir" ] || { echo "ldev: no directory for '$name'" >&2; exit 1; }
+  [ -f "$dir/wp-config.php" ] || { echo "ldev: $dir is not a WordPress site (no wp-config.php)" >&2; exit 1; }
+  command -v wp >/dev/null 2>&1 || {
+    echo "ldev: wp-cli is required — brew install wp-cli" >&2
+    echo "      (a plain SQL replace would corrupt serialized options; see the note above this function)" >&2
+    exit 1
+  }
+
+  local host; host="$(dir_hostname "$(basename "$dir")")"
+  [ -n "$host" ] || { echo "ldev: '$(basename "$dir")' cannot be a hostname" >&2; exit 1; }
+  local new_url="https://$host"
+
+  # The constants win over the database when they are present, so read them first — asking
+  # WordPress for `option get home` while a constant overrides it reports the value that is
+  # NOT in the database, which is the one half that does not need replacing.
+  local old_url
+  old_url="$(grep -oE "define\(\s*'WP_HOME'\s*,\s*'[^']+'" "$dir/wp-config.php" | grep -oE "'[^']+'\$" | tr -d "'")"
+  if [ -z "$old_url" ]; then
+    old_url="$(wp --path="$dir" option get home --skip-plugins --skip-themes 2>/dev/null)"
+  fi
+  [ -n "$old_url" ] || { echo "ldev: could not determine the current URL for $name" >&2; exit 1; }
+
+  if [ "$old_url" = "$new_url" ]; then
+    echo "$name is already at $new_url — nothing to do"
+    return 0
+  fi
+
+  printf '\n%s%s%s\n' "$B" "$name" "$R"
+  printf '  from  %s\n  to    %s\n  dir   %s\n\n' "$old_url" "$new_url" "$dir"
+
+  # Say how much is about to change BEFORE asking, because "1 replacement" and "4,000
+  # replacements" deserve different answers and only one of them is worth a backup.
+  echo "counting what would change (dry run)..."
+  local n
+  n="$(wp --path="$dir" search-replace "$old_url" "$new_url" \
+        --all-tables-with-prefix --skip-columns=guid --dry-run --format=count \
+        --skip-plugins --skip-themes 2>/dev/null | tail -1)"
+  [ -n "$n" ] || n="?"
+  echo "  $n database replacement(s), plus WP_HOME and WP_SITEURL in wp-config.php"
+  echo ""
+
+  if [ "$assume_yes" != 1 ]; then
+    [ -t 0 ] || { echo "ldev: refusing to rewrite site data without a terminal to confirm on — pass --yes" >&2; exit 1; }
+    local reply=""
+    read -r -p "Apply this? [y/N]: " reply </dev/tty || true
+    [[ "$reply" =~ ^[Yy] ]] || { echo "aborted — nothing changed"; return 0; }
+  fi
+
+  # Back up before touching either half. A database export is the only one of the two that
+  # cannot be reconstructed by hand afterwards.
+  local stamp backup
+  stamp="$(date '+%Y%m%d-%H%M%S')"
+  backup="$dir/.ldev-rehome-$stamp.sql"
+  echo "backing up the database to $backup"
+  wp --path="$dir" db export "$backup" --skip-plugins --skip-themes >/dev/null 2>&1 \
+    || { echo "ldev: database export failed — stopping before anything is changed" >&2; exit 1; }
+  cp "$dir/wp-config.php" "$dir/wp-config.php.ldev-$stamp.bak"
+
+  # Constants first: if the search-replace fails halfway, a site whose constants already
+  # point at the working URL is reachable enough to fix by hand. The reverse is not.
+  sed -i '' -E "s|(define\(\s*'WP_HOME'\s*,\s*')[^']+(')|\1$new_url\2|; s|(define\(\s*'WP_SITEURL'\s*,\s*')[^']+(')|\1$new_url\2|" "$dir/wp-config.php"
+  echo "updated WP_HOME and WP_SITEURL"
+
+  wp --path="$dir" search-replace "$old_url" "$new_url" \
+     --all-tables-with-prefix --skip-columns=guid --skip-plugins --skip-themes >/dev/null 2>&1 \
+    || { echo "ldev: search-replace failed — restore with: wp --path=$dir db import $backup" >&2; exit 1; }
+  echo "rewrote $n database reference(s)"
+
+  wp --path="$dir" cache flush --skip-plugins --skip-themes >/dev/null 2>&1 || true
+
+  printf '\n  %s is now at %s\n' "$name" "$new_url"
+  printf '  undo:  wp --path=%s db import %s\n         cp %s/wp-config.php.ldev-%s.bak %s/wp-config.php\n\n' \
+    "$dir" "$backup" "$dir" "$stamp" "$dir"
+}
+
 # Render the wildcard Caddyfile and validate it. Separate from `apply` because install.sh
 # needs the config on disk BEFORE it can bootstrap the launchd daemon that reads it, and
 # `apply` ends by restarting a service that does not exist yet at that point.
@@ -436,6 +532,7 @@ case "${1:-doctor}" in
   list|ls) shift; cmd_list "$@" ;;
   new)     shift; cmd_new "$@" ;;
   standalone) shift; cmd_standalone "$@" ;;
+  rehome)  shift; cmd_rehome "$@" ;;
   render)  shift; cmd_render "$@" ;;
   apply)   shift; cmd_apply "$@" ;;
   restart) shift; cmd_restart "$@" ;;

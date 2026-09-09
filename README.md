@@ -71,6 +71,7 @@ ldev doctor      # check each layer separately and say which one is broken
 ldev list        # sites found under the sites directory, and their type
 ldev new <name>  # create a site directory, live immediately
 ldev standalone <name>  # give one site its own server, fronted by the wildcard one
+ldev rehome <name>      # move a WordPress site onto its portless URL
 ldev render      # re-render the server config, without restarting
 ldev apply       # re-render the server config and restart
 ldev status      # is the service running
@@ -104,6 +105,29 @@ Four layers, each replaceable:
    confusing failure to debug. Per-host issuance avoids it.
 4. **Fallback** — anything with no directory goes to the dashboard, so a typo or
    a half-set-up project tells you what exists instead of failing blankly.
+
+## Moving a WordPress site onto its portless URL
+
+WordPress records its own address, so a site set up when the URL carried a port
+keeps redirecting to that port even once it is served without one. Two places
+have to agree — the `WP_HOME`/`WP_SITEURL` constants in `wp-config.php`, which
+win when present, and the database, where the old URL is baked into post
+content, options, menus and widget settings.
+
+```sh
+ldev rehome shop
+```
+
+It reports how many database references would change, asks before touching
+anything, exports the database and copies `wp-config.php` first, then rewrites
+both halves and prints the command to undo it.
+
+The database half goes through `wp search-replace` (so wp-cli is required for
+this command alone) rather than SQL. WordPress stores arrays as PHP-serialized
+strings whose length prefixes are counted in bytes: replacing a longer URL with
+a shorter one inside one corrupts the record, PHP overshoots the declared
+length, and the option silently comes back as `false`. Every plugin reading it
+then reverts to defaults, which looks nothing like a URL problem.
 
 ## The dashboard
 
