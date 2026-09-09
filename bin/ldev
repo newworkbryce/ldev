@@ -96,8 +96,10 @@ cmd_doctor() {
     for f in "$SITES"/*."$TLD"/Caddyfile; do
       [ -f "$f" ] || continue
       found=1
-      local host port addr
+      local host port addr host_re
       host="$(basename "$(dirname "$f")")"
+      # Dots in the host would otherwise match any character in the pattern below.
+      host_re="${host//./\\.}"
       # A Caddy address line can carry several hosts: `matsu.ldev, matsu-dev.ldev:8444 {`.
       # Each address is INDEPENDENT, so a host written without a port is served on 443 rather
       # than on its neighbour's port — reading the first port on the line would report the wrong
@@ -106,11 +108,13 @@ cmd_doctor() {
       # Every one of these Caddyfiles names its host in a header comment too, and matching that
       # first reported the host as portless — so every site came back as 443.
       addr="$(grep -vE '^[[:space:]]*#' "$f" | grep -E '\{[[:space:]]*$' \
-        | grep -oE "(^|[, ])$host(:[0-9]+)?" | head -1 | tr -d ' ,')"
+        | grep -oE "(^|[, ])$host_re(:[0-9]+)?" | head -1 | tr -d ' ,')"
       if [ -z "$addr" ]; then note "$host — no address for it in its Caddyfile"; continue; fi
       port="${addr##*:}"
       [ "$port" = "$addr" ] && port=443
-      code="$(curl -sk -o /dev/null -w '%{http_code}' --max-time 5 "https://$host:$port/" 2>/dev/null)"
+      # No -k. The auto branch below validates the certificate, and a ✓ has to mean the same
+      # thing in both — a site whose cert nothing trusts is a real fault, not one to skip past.
+      code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "https://$host:$port/" 2>/dev/null)"
       if [ "$code" = "200" ]; then ok "https://$host:$port/ returned 200"
       elif [ "$code" = "000" ]; then bad "https://$host:$port/ did not connect — is its caddy running?"
       else note "https://$host:$port/ returned $code"; fi

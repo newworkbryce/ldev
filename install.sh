@@ -207,22 +207,22 @@ if [ "$SKIP_DNS" = 1 ]; then
 elif [ -f "/etc/resolver/$TLD" ] && pgrep -x dnsmasq >/dev/null 2>&1; then
   say "/etc/resolver/$TLD already exists and dnsmasq is running — nothing to do here."
 else
-say "Next step needs sudo: writing /etc/resolver/$TLD and starting dnsmasq as root."
-say "  (dnsmasq must run as root to bind port 53.)"
-if confirm "Run these now?"; then
-  sudo mkdir -p /etc/resolver
-  printf 'nameserver 127.0.0.1\n' | sudo tee "/etc/resolver/$TLD" >/dev/null
-  sudo brew services restart dnsmasq >/dev/null
-  say "done."
-else
-  cat <<EOF
+  say "Next step needs sudo: writing /etc/resolver/$TLD and starting dnsmasq as root."
+  say "  (dnsmasq must run as root to bind port 53.)"
+  if confirm "Run these now?"; then
+    sudo mkdir -p /etc/resolver
+    printf 'nameserver 127.0.0.1\n' | sudo tee "/etc/resolver/$TLD" >/dev/null
+    sudo brew services restart dnsmasq >/dev/null
+    say "done."
+  else
+    cat <<EOF
 
 ${YEL}Run these yourself before the TLD will resolve:${R}
   sudo mkdir -p /etc/resolver
   echo 'nameserver 127.0.0.1' | sudo tee /etc/resolver/$TLD
   sudo brew services restart dnsmasq
 EOF
-fi
+  fi
 fi
 
 # ---------------------------------------------------------------- 4. certificates
