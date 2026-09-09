@@ -31,12 +31,24 @@
 
 # The ask endpoint. Local-only listener: it approves any host, which is correct
 # for a machine-local TLD that resolves only to 127.0.0.1.
+#
+# The 127.0.0.1 in the address above is only a Host-header MATCH — Caddy still binds
+# :__ASK_PORT__ on every interface, and any client can send that header. Nothing here
+# but a static 200, so nothing leaked; the bind is so the address means what it reads as.
 http://127.0.0.1:__ASK_PORT__ {
+	bind 127.0.0.1
 	respond /check 200
 }
 
 # Every host under the TLD.
 *.__TLD__ {
+	# Loopback only — see the note on the http://*.localhost block below. The certificate
+	# is not a network boundary: a `curl -k` from any machine on the LAN ignores it, and
+	# `file_server browse` further down would then list a site root to whoever asked.
+	#
+	# Delete this line (and the one in the bare-TLD block) to serve the LAN deliberately.
+	bind 127.0.0.1 ::1
+
 	tls {
 		on_demand
 	}
@@ -127,6 +139,7 @@ http://localhost {
 
 # The bare TLD (http://__TLD__) is the dashboard's own address.
 __TLD__ {
+	bind 127.0.0.1 ::1
 	tls {
 		on_demand
 	}

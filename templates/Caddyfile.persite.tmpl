@@ -19,11 +19,41 @@
 # already used by sibling site Caddyfiles. If you hand-write one of these, pick a pair
 # nobody else is using, or set `admin off` below if you never need the API for this site.
 
+# Caddy allows exactly ONE keyless block and it must come FIRST, so keep everything
+# global in here. A second one further down is a hard error — "server block without any
+# key is global configuration, and if used, it must be first" — and takes the site down.
 {
 	admin localhost:__ADMIN_PORT__
+
+	# No automatic HTTP->HTTPS redirect listeners.
+	#
+	# Caddy otherwise opens :80 to redirect each HTTPS hostname, and that generated
+	# server INHERITS the `bind` below — which on a privileged port an unprivileged
+	# process cannot do. The site then fails to start on "listen tcp 127.0.0.1:80:
+	# bind: permission denied", naming a port this file never mentions.
+	#
+	# Nothing is lost: the site block does its own HTTP->HTTPS redirect on its own port.
+	auto_https disable_redirects
 }
 
 __NAME__.__TLD__:__SITE_PORT__ {
+	# Loopback only. Caddy binds every interface by default, so without this the site is
+	# served to the whole network — the certificate is the only thing in the way, and a
+	# `curl -k` from any machine on the LAN walks straight past it.
+	#
+	# Delete this line to test from a phone or another machine on the same network. That
+	# is a real use of a local dev TLD, so it is one line to remove — but it is off by
+	# default, because a laptop on a cafe or office network should not quietly be serving
+	# the contents of ~/Sites to it.
+	#
+	# It only works because __SITE_PORT__ is >= 1024. On macOS an unprivileged process
+	# CANNOT bind a specific address on a privileged port, only the wildcard: `*:443`
+	# succeeds where `127.0.0.1:443` is refused outright. Per-site mode runs as your user,
+	# so a site moved below 1024 must drop this line or run as root. Caddy aborts the
+	# WHOLE config on one bad listener, so the symptom is every site in this file going
+	# down together, over a permission error naming a port you did not think you set.
+	bind 127.0.0.1 ::1
+
 	# Plain HTTP on this same port redirects to HTTPS. One block, one port: a separate
 	# `http://` block on the same port would be a duplicate address and refuse to load.
 	@http protocol http
