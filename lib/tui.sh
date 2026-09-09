@@ -62,8 +62,14 @@ tui_init() {
     # not kill the shell, which is what an uncaught exec redirection error does.
     if { exec 3<"${LDEV_TTY:-/dev/tty}"; } 2>/dev/null; then
       TUI_INTERACTIVE=1
+      # A fatal signal that is not trapped kills the shell without running the
+      # EXIT trap, so every signal that can plausibly end an installer mid-menu
+      # has to be caught by name or the user is left with an invisible cursor.
       trap 'tui_cleanup' EXIT
-      trap 'tui_cleanup; printf "\n"; exit 130' INT TERM
+      trap 'tui_cleanup; printf "\n"; exit 130' INT
+      trap 'tui_cleanup; printf "\n"; exit 131' QUIT
+      trap 'tui_cleanup; printf "\n"; exit 143' TERM
+      trap 'tui_cleanup; exit 129' HUP
     fi
   fi
 
@@ -78,7 +84,9 @@ tui_init() {
 tui_cleanup() {
   [ "$TUI_INTERACTIVE" = 1 ] || return 0
   printf '\033[?25h'
-  exec 3<&- 2>/dev/null || true
+  # Braced for the same reason as the open above: a bare `exec ... 2>/dev/null`
+  # would redirect this shell's stderr for whatever is left of the run.
+  { exec 3<&-; } 2>/dev/null || true
   TUI_INTERACTIVE=0
 }
 

@@ -79,6 +79,34 @@ check "an empty line is not EOF"  "$(drive "$CR" "$eofin")"                  "ok
 promptleak='tui_input "Local TLD" "ldev" >"'"$TMP"'/prompt"; grep -c "Local TLD" "'"$TMP"'/prompt" >&4'
 check "the prompt goes to stdout, the answer does not" "$(drive "test$CR" "$promptleak" | tr -d ' \n')" "1"
 
+echo "--- the cursor always comes back"
+# A menu hides the cursor while it draws. Whatever happens next — a choice, a
+# cancel, or a signal — the terminal must not be left without one, because that
+# outlives the process that did it.
+SHOW=$'\033[?25h'
+printf '%s' "$DOWN$CR" > "$TMP/keys"
+LDEV_FORCE_TUI=1 LDEV_TTY="$TMP/keys" "$SHELL_UNDER_TEST" -c "
+  . '$REPO/lib/tui.sh'; tui_init; menu_select T 0 one '' two '' || true
+" >"$TMP/cur" 2>/dev/null
+check "a finished menu leaves the cursor shown" \
+  "$(tail -c 6 "$TMP/cur" | grep -cF "$SHOW" || true)" "1"
+
+# Ctrl-C in the middle of a menu. The keys come from a fifo that never delivers,
+# so the menu is parked in its read when the signal lands.
+rm -f "$TMP/fifo"; mkfifo "$TMP/fifo"
+( exec 3>"$TMP/fifo"; sleep 6 ) &
+holder=$!
+LDEV_FORCE_TUI=1 LDEV_TTY="$TMP/fifo" "$SHELL_UNDER_TEST" -c "
+  . '$REPO/lib/tui.sh'; tui_init; menu_select T 0 one '' two '' || true
+" >"$TMP/intr" 2>/dev/null &
+victim=$!
+sleep 1
+kill -INT "$victim" 2>/dev/null
+wait "$victim" 2>/dev/null; intr_rc=$?
+kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
+check "SIGINT restores the cursor" "$(tail -c 8 "$TMP/intr" | grep -cF "$SHOW" || true)" "1"
+check "SIGINT exits 130"           "$intr_rc"                                           "130"
+
 echo "--- plain mode never reads a key"
 plain=$(LDEV_PLAIN=1 LDEV_TTY=/dev/null "$SHELL_UNDER_TEST" -c "
   set -uo pipefail
