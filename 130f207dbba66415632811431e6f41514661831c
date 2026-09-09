@@ -1,0 +1,119 @@
+{
+  "version": "0.1.0",
+  "id": "4bd68f3e-8629-46f4-8949-bef080539e89",
+  "timestamp": "2026-09-09T19:22:24Z",
+  "vcs": {
+    "type": "git",
+    "revision": "130f207dbba66415632811431e6f41514661831c"
+  },
+  "tool": {
+    "name": "triaj",
+    "version": "1.3.1"
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/3e8f56a2-7837-42a5-adfb-4e072f3876ee",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 74,
+              "end_line": 74,
+              "content_hash": "sha256:823f09abeecad8a1eb6eabe3006da5d80e50bc9951d6765a5be732c8ada22eae",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 109,
+              "end_line": 131,
+              "content_hash": "sha256:18f563b6bf292ecfa1e422d5d945c2a6e5683fbb8022765ad7547815e815b39a",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "bin/ldev",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/3e8f56a2-7837-42a5-adfb-4e072f3876ee",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 9,
+              "end_line": 9,
+              "content_hash": "sha256:3f7de6c9b748fb6ffe72ad2e3a2ab1cf08440e10f9fb503d498307500f705341",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 394,
+              "end_line": 488,
+              "content_hash": "sha256:eb52ced890b727e895aa75d5be9fc89de0b8d8170d2f2b5fc887b03a23da72e2",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 535,
+              "end_line": 535,
+              "content_hash": "sha256:a5e847f49b4a47a4b80fb9f5d1dbd7847603290c6a02018f8b69e474553302c8",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "test/rehome.test.sh",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/3e8f56a2-7837-42a5-adfb-4e072f3876ee",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 1,
+              "end_line": 76,
+              "content_hash": "sha256:da3fc63792ac6259f308c956d486ae66d0dfda5c4873f8f6bb48defffde7cdd1",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "triaj": {
+      "task": "Add ldev rehome, to move a WordPress site onto its portless URL",
+      "status": "Waiting",
+      "agent": "claude-code",
+      "attribution_granularity": "commit"
+    }
+  }
+}
