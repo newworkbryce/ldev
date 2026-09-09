@@ -5,6 +5,7 @@
 #   ./install.sh                 interactive
 #   ./install.sh --defaults      accept every default, prompt for nothing
 #   ./install.sh --tld test --sites ~/Code --mode auto --yes
+#   ./install.sh --mode persite --skip-dns   leave /etc/resolver and dnsmasq alone
 #
 # Everything it writes is listed at the end, and every root-owned change is
 # announced before it happens.
@@ -19,6 +20,7 @@ CONFIG_FILE="$HOME/.config/ldev/config"
 TLD="ldev"
 SITES="$HOME/Sites"
 MODE=""                       # auto | persite | apache
+SKIP_DNS=0                    # --skip-dns: leave /etc/resolver and dnsmasq alone
 PHP_FPM="127.0.0.1:9000"
 ADMIN_PORT="2019"           # persite: base of the admin-port run (2019, 2020, ...)
 SITE_PORT_BASE="8443"       # persite: base of the site-port run (8443, 8444, ...)
@@ -49,9 +51,21 @@ ask() {
   printf '%s' "${reply:-$default}"
 }
 
+# A prompt nobody can answer means NO.
+#
+# This used to return 0 — yes — when stdin was not a terminal, which made every unattended run
+# approve things a human was being asked about, `sudo mkdir /etc/resolver` among them. Combined
+# with `set -e` two lines up, the consequence was worse than a wrong answer: sudo has no tty to
+# prompt on, fails, and the script dies at that line. The config file is written 110 lines later,
+# so a headless run could only ever produce a half-configured machine — and `--defaults`, whose
+# own help says "prompt for nothing", hit exactly that.
+#
+# Failing closed costs an unattended run the optional extras (it prints what to run instead, which
+# every `else` branch here already does). `--yes` and `--defaults` still mean yes, explicitly, and
+# that is the difference: a person said so, rather than nobody being there to say otherwise.
 confirm() {
   [ "$ASSUME_YES" = 1 ] && return 0
-  [ -t 0 ] || return 0
+  [ -t 0 ] || return 1
   local reply=""
   read -r -p "$1 [y/N]: " reply </dev/tty || true
   [[ "$reply" =~ ^[Yy] ]]
@@ -66,6 +80,7 @@ while [ $# -gt 0 ]; do
     --mode)     MODE="${2:?--mode needs a value}"; shift 2 ;;
     --php-fpm)  PHP_FPM="${2:?--php-fpm needs a value}"; shift 2 ;;
     --yes|-y)   ASSUME_YES=1; shift ;;
+    --skip-dns) SKIP_DNS=1; shift ;;
     --defaults) USE_DEFAULTS=1; ASSUME_YES=1; shift ;;
     -h|--help)  sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *)          die "unknown option: $1 (try --help)" ;;
@@ -183,6 +198,15 @@ fi
 
 # /etc/resolver tells macOS to ask dnsmasq for this TLD specifically. Root-owned.
 say ""
+# Already done is a normal state, not a reason to ask for a password again. Detecting it lets an
+# unattended run finish: --defaults answers yes to everything, and yes here means a sudo that has
+# no terminal to prompt on, which under `set -e` kills the run 110 lines before the config is
+# written. --skip-dns is the explicit form of the same thing.
+if [ "$SKIP_DNS" = 1 ]; then
+  say "Skipping the resolver and dnsmasq step (--skip-dns)."
+elif [ -f "/etc/resolver/$TLD" ] && pgrep -x dnsmasq >/dev/null 2>&1; then
+  say "/etc/resolver/$TLD already exists and dnsmasq is running — nothing to do here."
+else
 say "Next step needs sudo: writing /etc/resolver/$TLD and starting dnsmasq as root."
 say "  (dnsmasq must run as root to bind port 53.)"
 if confirm "Run these now?"; then
@@ -198,6 +222,7 @@ ${YEL}Run these yourself before the TLD will resolve:${R}
   echo 'nameserver 127.0.0.1' | sudo tee /etc/resolver/$TLD
   sudo brew services restart dnsmasq
 EOF
+fi
 fi
 
 # ---------------------------------------------------------------- 4. certificates

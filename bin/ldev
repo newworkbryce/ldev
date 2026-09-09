@@ -85,10 +85,43 @@ cmd_doctor() {
 
   printf '\n%sEnd to end%s\n' "$B" "$R"
   local code
-  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "https://$TLD/" 2>/dev/null)"
-  if [ "$code" = "200" ]; then ok "https://$TLD/ returned 200"
-  elif [ "$code" = "000" ]; then bad "https://$TLD/ did not connect"
-  else note "https://$TLD/ returned $code"; fi
+  # WHAT to fetch depends on the mode, and getting that wrong is worse than not checking.
+  #
+  # `https://<tld>/` is the auto-mode dashboard. In per-site mode nothing owns 443 — that is the
+  # documented behaviour of the mode, not a fault — so asking for it always failed, and doctor
+  # reported a healthy install as broken. A check that answers a different question than the one
+  # the operator is asking is how you send somebody debugging something that was never wrong.
+  if [ "$MODE" = "persite" ]; then
+    local found=0
+    for f in "$SITES"/*."$TLD"/Caddyfile; do
+      [ -f "$f" ] || continue
+      found=1
+      local host port addr
+      host="$(basename "$(dirname "$f")")"
+      # A Caddy address line can carry several hosts: `matsu.ldev, matsu-dev.ldev:8444 {`.
+      # Each address is INDEPENDENT, so a host written without a port is served on 443 rather
+      # than on its neighbour's port — reading the first port on the line would report the wrong
+      # URL for the host that has none. Match this host's own token, and default it to 443.
+      # Only real address lines: not comments, and ending in the `{` that opens a site block.
+      # Every one of these Caddyfiles names its host in a header comment too, and matching that
+      # first reported the host as portless — so every site came back as 443.
+      addr="$(grep -vE '^[[:space:]]*#' "$f" | grep -E '\{[[:space:]]*$' \
+        | grep -oE "(^|[, ])$host(:[0-9]+)?" | head -1 | tr -d ' ,')"
+      if [ -z "$addr" ]; then note "$host — no address for it in its Caddyfile"; continue; fi
+      port="${addr##*:}"
+      [ "$port" = "$addr" ] && port=443
+      code="$(curl -sk -o /dev/null -w '%{http_code}' --max-time 5 "https://$host:$port/" 2>/dev/null)"
+      if [ "$code" = "200" ]; then ok "https://$host:$port/ returned 200"
+      elif [ "$code" = "000" ]; then bad "https://$host:$port/ did not connect — is its caddy running?"
+      else note "https://$host:$port/ returned $code"; fi
+    done
+    [ "$found" = 0 ] && note "no per-site Caddyfiles yet — ldev new <name> writes one"
+  else
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "https://$TLD/" 2>/dev/null)"
+    if [ "$code" = "200" ]; then ok "https://$TLD/ returned 200"
+    elif [ "$code" = "000" ]; then bad "https://$TLD/ did not connect"
+    else note "https://$TLD/ returned $code"; fi
+  fi
 
   printf '\n'
   [ "$FAILED" = 0 ] && printf '%sAll checks passed.%s\n\n' "$GRN" "$R" || printf '%sSome checks failed — see the hints above.%s\n\n' "$RED" "$R"
