@@ -79,11 +79,22 @@ die() { printf '\n %s %s%s%s\n' "$G_NO" "$C_RED" "$*" "$C_R" >&2; exit 1; }
 
 [ "$(uname -s)" = "Darwin" ] || die "this installer targets macOS; it uses /etc/resolver and launchd."
 
-# ask <prompt> <default> [hint] -> echoes the answer
+# ask <prompt> <default> [hint] -> the answer in ANSWER; 1 at end of input.
+#
+# The answer arrives in a variable rather than on stdout, and callers must not
+# wrap this in $(...). Two reasons, both of which cost a working installer once:
+# the prompt itself is printed on stdout, so capturing the output captures the
+# prompt as part of the answer and every validation loop then rejects the value
+# the user just typed; and a command substitution is a subshell, so TUI_EOF set
+# inside it would never reach the loop that has to stop when input runs out.
+ANSWER=""
 ask() {
-  if [ "$USE_DEFAULTS" = 1 ]; then printf '%s' "$2"; return; fi
-  tui_input "$1" "$2" "${3:-}"
-  printf '%s' "$TUI_VALUE"
+  local rc=0
+  ANSWER="$2"
+  if [ "$USE_DEFAULTS" = 1 ]; then return 0; fi
+  tui_input "$1" "$2" "${3:-}" || rc=$?
+  ANSWER="$TUI_VALUE"
+  return "$rc"
 }
 
 # A prompt nobody can answer means NO.
@@ -124,7 +135,9 @@ reserved_tld() {
 edit_tld() {
   local candidate
   while :; do
-    candidate="$(ask "Local TLD" "$TLD" "one label, no dot — sites will live at https://<name>.<tld>")"
+    ask "Local TLD" "$TLD" "one label, no dot — sites will live at https://<name>.<tld>" \
+      || die "aborted — end of input while asking for the TLD."
+    candidate="$ANSWER"
     candidate="${candidate#.}"                     # tolerate ".ldev"
     if ! valid_tld "$candidate"; then
       if [ "$TUI_INTERACTIVE" = 1 ]; then
@@ -148,7 +161,8 @@ edit_tld() {
 # and keep the free-text field for everyone else.
 edit_sites() {
   if [ "$TUI_INTERACTIVE" != 1 ]; then
-    SITES="$(ask "Directory holding your sites" "$SITES")"
+    ask "Directory holding your sites" "$SITES" || die "aborted — end of input."
+    SITES="$ANSWER"
     SITES="${SITES/#\~/$HOME}"
     return 0
   fi
@@ -171,7 +185,8 @@ edit_sites() {
   if [ "$MENU_CHOICE" -lt "${#cands[@]}" ]; then
     SITES="${cands[$MENU_CHOICE]}"
   else
-    SITES="$(ask "Directory holding your sites" "$SITES")"
+    ask "Directory holding your sites" "$SITES" || die "aborted — end of input."
+    SITES="$ANSWER"
   fi
   SITES="${SITES/#\~/$HOME}"
   return 0
@@ -201,7 +216,11 @@ Choose this if you already run Apache and want to keep it." \
   esac
 }
 
-edit_php() { PHP_FPM="$(ask "PHP-FPM address" "$PHP_FPM" "host:port, or a unix socket path")"; }
+edit_php() {
+  ask "PHP-FPM address" "$PHP_FPM" "host:port, or a unix socket path" \
+    || die "aborted — end of input."
+  PHP_FPM="$ANSWER"
+}
 
 if [ "$USE_DEFAULTS" != 1 ]; then
   edit_tld

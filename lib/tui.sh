@@ -26,6 +26,7 @@ TUI_COLOR=0
 TUI_UNICODE=1
 TUI_KEY=""
 TUI_VALUE=""
+TUI_EOF=0
 MENU_CHOICE=0
 MENU_HOTKEYS=""
 
@@ -294,6 +295,17 @@ menu_confirm() {
 }
 
 # tui_input <prompt> <default> [hint] -> TUI_VALUE
+#
+# The answer comes back in TUI_VALUE, never on stdout, because the prompt is on
+# stdout: a caller that wrote `answer="$(tui_input ...)"` would capture the
+# prompt as part of the answer, and a validation loop around that rejects
+# everything the user types, including the value it asked for.
+#
+# End of input is a distinct outcome from an empty line, and returns 1. An empty
+# line means "take the default" and can be answered again; EOF means there is
+# nobody left to answer, and a caller that re-asks on a rejected value has to
+# stop rather than spin — silently handing back the default here is how a
+# retry loop turns into an infinite one.
 tui_input() {
   local p="$1" d="$2" hint="${3:-}" reply=""
   TUI_VALUE="$d"
@@ -301,7 +313,12 @@ tui_input() {
   printf '\n %s%s%s' "$C_B" "$p" "$C_R"
   [ -n "$hint" ] && printf '  %s%s%s' "$C_DIM" "$hint" "$C_R"
   printf '\n  %s%s%s %s[%s]%s ' "$C_CYN" "$G_ARROW" "$C_R" "$C_DIM" "$d" "$C_R"
-  IFS= read -r reply <&3 2>/dev/null || reply=""
+  if ! IFS= read -r reply <&3 2>/dev/null; then
+    # A last line with no trailing newline is still an answer: read reports
+    # failure but has already filled `reply`. Only an empty read is EOF proper.
+    TUI_EOF=1
+    if [ -z "$reply" ]; then printf '\n'; return 1; fi
+  fi
   [ -n "$reply" ] && TUI_VALUE="$reply"
   return 0
 }
