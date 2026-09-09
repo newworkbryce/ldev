@@ -1,0 +1,123 @@
+{
+  "version": "0.1.0",
+  "id": "ac8c5c44-6ebf-4143-82fa-f3dbc29a426e",
+  "timestamp": "2026-09-09T08:03:41Z",
+  "vcs": {
+    "type": "git",
+    "revision": "4ad7ef539103ed76d8d645ccb62c24312221ede8"
+  },
+  "tool": {
+    "name": "triaj",
+    "version": "1.3.1"
+  },
+  "files": [
+    {
+      "path": "bin/ldev",
+      "conversations": [
+        {
+          "url": "triaj:commit/4ad7ef539103ed76d8d645ccb62c24312221ede8",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 88,
+              "end_line": 124,
+              "content_hash": "sha256:3f9070e9bbe8e3846d9e8b586c566e1c97f684b553d3e7e9c0c891f39b5df196",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "install.sh",
+      "conversations": [
+        {
+          "url": "triaj:commit/4ad7ef539103ed76d8d645ccb62c24312221ede8",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 8,
+              "end_line": 8,
+              "content_hash": "sha256:3b70063ae675700275784e62ec46e3703cad34e90dbf05810acc042a72f7748d",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 23,
+              "end_line": 23,
+              "content_hash": "sha256:2940b8c09105905b75c664ea6304dd634b33efcf97d73d086baa2b750d287e0c",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 54,
+              "end_line": 65,
+              "content_hash": "sha256:ba52096ad4196fbdf0d8c38a65ee057bea47af9909a904c7f394ccd436bcce60",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 68,
+              "end_line": 68,
+              "content_hash": "sha256:aaf9ccbe241941917455b2def3ce84420cda7ae86b11c79089db157efbb81bea",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 83,
+              "end_line": 83,
+              "content_hash": "sha256:cb3840816ae299679d2dbd3dc602e93b4482fc7924a9775e160e9bd587d71fa2",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 201,
+              "end_line": 209,
+              "content_hash": "sha256:d120a0fea2c81bd594e3a0eff44710b86248d63fa8a8e0d6754e6492a2808387",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 226,
+              "end_line": 226,
+              "content_hash": "sha256:b4bdc848109722a383d0a972c6eb859f2abd29565b8c4cc7199e7c9eb708f1b7",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "triaj": {
+      "task": "Let install run headless, and make doctor mode-aware",
+      "status": "Completed",
+      "agent": "claude-code",
+      "attribution_granularity": "commit"
+    }
+  }
+}
