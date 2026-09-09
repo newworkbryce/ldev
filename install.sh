@@ -20,7 +20,7 @@ CONFIG_FILE="$HOME/.config/ldev/config"
 # Defaults. Every one of these is overridable by flag or prompt.
 TLD="ldev"
 SITES="$HOME/Sites"
-MODE=""                       # auto | persite | apache
+MODE=""                       # auto | persite
 MODE_FROM_FLAG=0
 SKIP_DNS=0                    # --skip-dns: leave /etc/resolver and dnsmasq alone
 PHP_FPM="127.0.0.1:9000"
@@ -43,7 +43,7 @@ ldev installer — a wildcard local-development TLD for macOS
 Options
   --tld <name>       local TLD, one label, no dot          (default: $TLD)
   --sites <dir>      directory holding your sites          (default: $SITES)
-  --mode <mode>      auto | persite | apache               (default: asked)
+  --mode <mode>      auto | persite                        (default: asked)
   --php-fpm <addr>   PHP-FPM address                       (default: $PHP_FPM)
   --skip-dns         leave /etc/resolver and dnsmasq alone
   -y, --yes          answer yes to every optional step
@@ -194,7 +194,7 @@ edit_sites() {
 
 edit_mode() {
   local d=0
-  case "$MODE" in persite) d=1 ;; apache) d=2 ;; esac
+  case "$MODE" in persite) d=1 ;; esac
   menu_select "How should sites be served?" "$d" \
     "$G_ROCKET auto      one Caddy owns 80 and 443    (recommended)" \
 "One Caddy serves every *.$TLD name. A directory at $SITES/<name>
@@ -205,14 +205,10 @@ Adding a site is creating a folder." \
 "One Caddy per site on its own port pair (8443, 8444 ...). Nothing
 owns 443, and each site needs its own Caddyfile and certificate.
 Choose this to preserve an existing per-site setup." \
-    "$G_GEAR apache    httpd vhosts" \
-"httpd vhosts, first-vhost-per-port as the fallback.
-Choose this if you already run Apache and want to keep it." \
     || die "aborted."
   case "$MENU_CHOICE" in
     0) MODE="auto" ;;
     1) MODE="persite" ;;
-    2) MODE="apache" ;;
   esac
 }
 
@@ -237,8 +233,13 @@ if [ -z "$MODE" ]; then
   if [ "$TUI_INTERACTIVE" = 1 ]; then edit_mode; else MODE="auto"; fi
 fi
 case "$MODE" in
-  auto|persite|apache) ;;
-  *) die "unknown mode '$MODE' — pick auto, persite or apache." ;;
+  auto|persite) ;;
+  # Named explicitly rather than folded into the catch-all: a script that still
+  # passes --mode apache should be told the mode is gone, not told it is a typo.
+  # It was removed because it never worked — the arm rendered a template that
+  # exists in no revision of this repo, so `set -e` killed the install there.
+  apache) die "mode 'apache' has been removed — it rendered a template that never existed. Use auto, or persite for a site that runs its own server." ;;
+  *) die "unknown mode '$MODE' — pick auto or persite." ;;
 esac
 
 DASHBOARD="$REPO_DIR/dashboard/dist"
@@ -259,7 +260,6 @@ show_summary() {
   case "$MODE" in
     auto)    ui_item "$HOME/.config/ldev/Caddyfile"
              ui_item "/Library/LaunchDaemons/com.ldev.caddy.plist  $C_DIM(root)$C_R" ;;
-    apache)  ui_item "$BREW_PREFIX/etc/httpd/extra/httpd-vhosts-ldev.conf" ;;
     persite) ui_item "nothing global — one Caddyfile per site, written by ldev new" ;;
   esac
   printf '\n'
@@ -299,8 +299,7 @@ command -v brew >/dev/null 2>&1 || die "Homebrew is required: https://brew.sh"
 need=()
 command -v dnsmasq >/dev/null 2>&1 || need+=(dnsmasq)
 command -v mkcert  >/dev/null 2>&1 || need+=(mkcert)
-[ "$MODE" = "apache" ] && { command -v httpd >/dev/null 2>&1 || need+=(httpd); }
-[ "$MODE" != "apache" ] && { command -v caddy >/dev/null 2>&1 || need+=(caddy); }
+command -v caddy >/dev/null 2>&1 || need+=(caddy)
 command -v php >/dev/null 2>&1 || need+=(php)
 
 if [ ${#need[@]} -gt 0 ]; then
@@ -458,14 +457,6 @@ case "$MODE" in
     ui_hint "Both ports must be unique per site — two Caddy processes cannot share"
     ui_hint "an admin port, and the second one exits at startup instead of warning."
     ui_hint "See docs/persite.md."
-    ;;
-  apache)
-    OUT="$BREW_PREFIX/etc/httpd/extra/httpd-vhosts-ldev.conf"
-    render "$REPO_DIR/templates/httpd-vhosts.tmpl" > "$OUT"
-    ui_wrote "$OUT"
-    ui_warn "include it from httpd.conf and restart:"
-    ui_cmd "echo 'Include $OUT' >> $BREW_PREFIX/etc/httpd/httpd.conf"
-    ui_cmd "sudo brew services restart httpd"
     ;;
 esac
 

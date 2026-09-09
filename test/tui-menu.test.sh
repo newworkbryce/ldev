@@ -121,6 +121,16 @@ for flag in --defaults --plain --skip-dns --mode; do
     echo "  FAIL --help says nothing about $flag"; fail=$((fail+1))
   fi
 done
+check "--help no longer offers apache" "$(printf '%s' "$help_out" | grep -ci apache)" "0"
+
+# apache was removed because it never worked: its arm rendered
+# templates/httpd-vhosts.tmpl, which exists in no revision of this repo, so the
+# install died there under set -e. A script still passing the flag should be
+# told the mode is gone by name, rather than getting "unknown mode" as if it
+# were a typo — and it must stop rather than quietly installing something else.
+apache_out="$("$SHELL_UNDER_TEST" "$REPO/install.sh" --mode apache --defaults --skip-dns 2>&1 || true)"
+check "--mode apache is refused by name" "$(printf '%s' "$apache_out" | grep -c "has been removed")" "1"
+check "--mode apache stops the install"  "$(printf '%s' "$apache_out" | grep -c 'Dependencies')"     "0"
 
 # ------------------------------------------------ the configuration phase, end to end
 #
@@ -191,8 +201,8 @@ priv_attempts() {
 }
 
 # The sites menu offers ~/Sites then ~/Code, so DOWN+enter picks ~/Code; the
-# mode menu offers auto/persite/apache, so DOWN+enter picks persite; "6" on the
-# review screen is "Quit without changing anything".
+# mode menu offers auto/persite, so DOWN+enter picks persite; "6" on the review
+# screen is "Quit without changing anything".
 echo "--- installer: quitting at the review screen writes nothing"
 install_drive "test$CR$DOWN$CR$DOWN${CR}6"
 check "finished (did not spin)"        "$INST_TIMEDOUT"                          "0"
