@@ -19,6 +19,12 @@ CONFIG_FILE="$HOME/.config/ldev/config"
 
 BREW_PREFIX="$(brew --prefix 2>/dev/null || echo /opt/homebrew)"
 CADDYFILE="$HOME/.config/ldev/Caddyfile"
+VHOSTS="$HOME/.config/ldev/httpd-vhosts.conf"   # apache mode: the file httpd.conf includes
+CERTDIR="$HOME/.config/ldev/certs"              # apache mode: one mkcert pair per host
+
+# Modules the generated vhost file needs, and which a stock Homebrew httpd.conf ships
+# commented out. Missing ones are a startup error naming a directive, not a module.
+HTTPD_MODULES="vhost_alias rewrite proxy proxy_fcgi ssl socache_shmcb"
 
 if [ -t 1 ]; then
   B=$'\033[1m'; R=$'\033[0m'; GRN=$'\033[32m'; RED=$'\033[31m'; YEL=$'\033[33m'; DIM=$'\033[2m'
@@ -55,12 +61,18 @@ cmd_doctor() {
   for p in 80 443; do
     if nc -z 127.0.0.1 "$p" 2>/dev/null; then ok "port $p is listening"; any=1
     else
-      if [ "$MODE" = "auto" ]; then bad "port $p is not listening"
+      # apache mode uses 80 and 443 exactly as auto does — the server behind them differs,
+      # the requirement does not. Only persite leaves them alone.
+      if [ "$MODE" = "auto" ] || [ "$MODE" = "apache" ]; then bad "port $p is not listening"
       else note "port $p is not listening (mode '$MODE' does not use it)"; fi
     fi
   done
   if [ "$MODE" = "auto" ] && [ "$any" = 0 ]; then
     fix "start the service — sudo launchctl bootstrap system /Library/LaunchDaemons/com.ldev.caddy.plist"
+  fi
+  if [ "$MODE" = "apache" ] && [ "$any" = 0 ]; then
+    fix "start httpd as root (80 and 443 are privileged) — sudo brew services start httpd"
+    fix "and check httpd.conf listens on 80 and 443, not the Homebrew default 8080"
   fi
 
   printf '\n%sPHP%s\n' "$B" "$R"
@@ -72,6 +84,38 @@ cmd_doctor() {
   fi
 
   printf '\n%sConfig%s\n' "$B" "$R"
+  if [ "$MODE" = "apache" ]; then
+    if [ -f "$VHOSTS" ]; then
+      local verr vrc
+      verr="$(httpd_validate "$VHOSTS")"; vrc=$?
+      if   [ "$vrc" = 0 ]; then ok "$VHOSTS validates"
+      elif [ "$vrc" = 2 ]; then note "httpd is not installed — cannot check $VHOSTS"
+      else bad "$VHOSTS is invalid"; printf '%s\n' "$verr" | tail -3 | sed 's/^/      /'; fi
+    else
+      bad "no vhost file at $VHOSTS"; fix "ldev apply"
+    fi
+
+    # A module the file needs but httpd has not loaded fails as an "Invalid command"
+    # naming a directive, which reads as a typo in the config rather than a missing
+    # module. Name the module instead.
+    local missing="" m
+    if command -v httpd >/dev/null 2>&1; then
+      local loaded; loaded="$(httpd -M 2>/dev/null)"
+      for m in $HTTPD_MODULES; do
+        printf '%s' "$loaded" | grep -q "${m}_module" || missing="$missing $m"
+      done
+      if [ -z "$missing" ]; then ok "httpd modules loaded:$(printf ' %s' $HTTPD_MODULES)"
+      else
+        bad "httpd modules not loaded:$missing"
+        fix "uncomment their LoadModule lines in $BREW_PREFIX/etc/httpd/httpd.conf"
+      fi
+    fi
+
+    grep -qs "Include.*$VHOSTS" "$BREW_PREFIX/etc/httpd/httpd.conf" \
+      && ok "httpd.conf includes $VHOSTS" \
+      || { bad "httpd.conf does not include $VHOSTS"
+           fix "echo 'Include $VHOSTS' >> $BREW_PREFIX/etc/httpd/httpd.conf"; }
+  fi
   if [ "$MODE" = "auto" ]; then
     if [ -f "$CADDYFILE" ]; then
       if caddy validate --config "$CADDYFILE" >/dev/null 2>&1; then ok "Caddyfile validates"
@@ -81,6 +125,16 @@ cmd_doctor() {
     fi
   fi
   [ -d "$SITES" ] && ok "sites directory $SITES" || bad "missing sites directory $SITES"
+
+  # `shop` and `shop.$TLD` are one hostname with two folders, and the plain one wins.
+  # Editing the shadowed folder and seeing nothing change is a long hour, so name it here.
+  local d base
+  for d in "$SITES"/*."$TLD"; do
+    [ -d "$d" ] || continue
+    base="$(basename "$d")"
+    [ -d "$SITES/${base%.$TLD}" ] \
+      && note "$base and ${base%.$TLD} are one hostname — https://$base/ serves ${base%.$TLD}"
+  done
   [ -f "$DASHBOARD/index.html" ] && ok "dashboard built" || { bad "dashboard not built"; fix "cd $REPO_DIR/dashboard && npm run build"; }
 
   printf '\n%sEnd to end%s\n' "$B" "$R"
@@ -93,11 +147,12 @@ cmd_doctor() {
   # the operator is asking is how you send somebody debugging something that was never wrong.
   if [ "$MODE" = "persite" ]; then
     local found=0
-    for f in "$SITES"/*."$TLD"/Caddyfile; do
+    for f in "$SITES"/*/Caddyfile; do
       [ -f "$f" ] || continue
       found=1
       local host port addr host_re
-      host="$(basename "$(dirname "$f")")"
+      # Both folder layouts, plain and .$TLD-suffixed, name the same host.
+      host="$(site_host "$(dirname "$f")")"
       # Dots in the host would otherwise match any character in the pattern below.
       host_re="${host//./\\.}"
       # A Caddy address line can carry several hosts: `matsu.ldev, matsu-dev.ldev:8444 {`.
@@ -125,6 +180,25 @@ cmd_doctor() {
     if [ "$code" = "200" ]; then ok "https://$TLD/ returned 200"
     elif [ "$code" = "000" ]; then bad "https://$TLD/ did not connect"
     else note "https://$TLD/ returned $code"; fi
+
+    # In apache mode the two protocols are served by different machinery — a wildcard
+    # vhost for HTTP, a generated per-site vhost for HTTPS — so one working says nothing
+    # about the other. Probe a real site over both rather than inferring.
+    if [ "$MODE" = "apache" ]; then
+      local first p
+      first="$(site_pairs | head -1 | cut -f1)"
+      if [ -z "$first" ]; then note "no sites yet — ldev new <name>"
+      else
+        for p in "http://$first/" "https://$first/"; do
+          code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$p" 2>/dev/null)"
+          if [ "$code" = "200" ]; then ok "$p returned 200"
+          elif [ "$code" = "000" ]; then
+            bad "$p did not connect"
+            case "$p" in https:*) fix "issue its vhost and certificate — ldev apply" ;; esac
+          else note "$p returned $code"; fi
+        done
+      fi
+    fi
   fi
 
   printf '\n'
@@ -132,19 +206,32 @@ cmd_doctor() {
   return "$FAILED"
 }
 
+# The hostname a directory answers to. A folder is named for the site and nothing else
+# ("shop"), but folders created before that carry the TLD ("shop.ldev") and are still
+# served, so both have to resolve to the same host here.
+site_host() {
+  local name="${1##*/}"
+  printf '%s.%s\n' "${name%.$TLD}" "$TLD"
+}
+
 cmd_list() {
   printf '\n%sSites in %s%s\n\n' "$B" "$SITES" "$R"
   local found=0
-  for d in "$SITES"/*."$TLD"; do
+  for d in "$SITES"/*; do
     [ -d "$d" ] || continue
     found=1
-    local name kind
+    local name host kind shadowed=""
     name="$(basename "$d")"
+    host="$(site_host "$d")"
     if   [ -f "$d/wp-config.php" ]; then kind="WordPress"
     elif [ -f "$d/index.php" ];     then kind="PHP"
     elif [ -f "$d/index.html" ];    then kind="static"
     else                                 kind="${YEL}no index${R}"; fi
-    printf '  %-40s %-12s https://%s/\n' "$name" "$kind" "$name"
+    # Two folders, one hostname: say which one is actually being served rather than
+    # printing the same URL twice and leaving the reader to guess.
+    [ "$name" != "${name%.$TLD}" ] && [ -d "$SITES/${name%.$TLD}" ] \
+      && shadowed="  ${YEL}(shadowed by ${name%.$TLD}/)${R}"
+    printf '  %-40s %-12s https://%s/%s\n' "$name" "$kind" "$host" "$shadowed"
   done
   [ "$found" = 0 ] && printf '  (none yet — ldev new <name>)\n'
   printf '\n'
@@ -156,7 +243,7 @@ cmd_list() {
 # owns its ports, and allocating around only what is running would hand a new site a pair
 # that collides the moment the old one starts again.
 persite_used_ports() {
-  grep -hoE '(admin localhost:|:)[0-9]{4,5}' "$SITES"/*."$TLD"/Caddyfile 2>/dev/null \
+  grep -hoE '(admin localhost:|:)[0-9]{4,5}' "$SITES"/*/Caddyfile 2>/dev/null \
     | grep -oE '[0-9]{4,5}$' | sort -un
 }
 
@@ -202,8 +289,17 @@ cmd_new() {
     echo "ldev: '$name' is not a site name — letters, digits, dot, dash and underscore only" >&2
     exit 1
   }
-  local dir="$SITES/$name.$TLD"
+  # The folder is named for the site, with no .$TLD suffix: the hostname already supplies
+  # that, and repeating it in the directory name meant an existing project could not be
+  # served without renaming it first. A folder that IS suffixed still works, so an install
+  # made before this keeps serving — and is reused here rather than shadowed by a second,
+  # empty folder for the same hostname.
+  local dir="$SITES/$name"
   [ -d "$dir" ] && { echo "ldev: $dir already exists"; exit 1; }
+  [ -d "$SITES/$name.$TLD" ] && {
+    echo "ldev: $SITES/$name.$TLD already exists and is served at https://$name.$TLD/"
+    exit 1
+  }
   mkdir -p "$dir"
   cat > "$dir/index.html" <<EOF
 <!doctype html>
@@ -215,6 +311,15 @@ cmd_new() {
 </body>
 EOF
   echo "created $dir"
+
+  # Apache serves the folder over HTTP the moment it exists — port 80 is wildcard — but
+  # HTTPS needs a vhost and a certificate naming this host, which `ldev apply` writes.
+  # Saying so here is the difference between "https is broken" and "one command left".
+  if [ "${MODE:-auto}" = "apache" ]; then
+    echo "        http://$name.$TLD/   (live now)"
+    echo "        https://$name.$TLD/  after: ldev apply"
+    return 0
+  fi
 
   # In auto mode a directory IS the whole site: one Caddy resolves it per request, so a
   # new folder is live immediately and needs no config and no restart.
@@ -245,8 +350,116 @@ EOF
   echo "        start it: cd $dir && caddy run"
 }
 
+# ---------------------------------------------------------------- apache mode
+#
+# Apache cannot do what auto mode does with one block: it has no on-demand certificate
+# issuance, and a wildcard *.$TLD cert is rejected by browsers for a single-label parent.
+# So HTTP is wildcard (mod_vhost_alias derives the root from the hostname) and HTTPS is
+# generated — one vhost and one mkcert pair per site folder, rewritten by `ldev apply`.
+
+# Each site once, as "<host>\t<dir>". A plain folder and a suffixed one are the SAME
+# host, and emitting both would write two vhosts with one ServerName — Apache takes the
+# first and silently ignores the second, which is a confusing way to serve the wrong
+# directory. Plain wins, matching auto mode.
+site_pairs() {
+  local d name
+  for d in "$SITES"/*; do
+    [ -d "$d" ] || continue
+    name="$(basename "$d")"
+    [ "$name" != "${name%.$TLD}" ] && [ -d "$SITES/${name%.$TLD}" ] && continue
+    printf '%s\t%s\n' "$(site_host "$d")" "$d"
+  done
+}
+
+# A certificate pair for one host, issued once and reused. mkcert names the host
+# explicitly, which is the whole point — see the wildcard note above.
+ensure_cert() {
+  local host="$1"
+  mkdir -p "$CERTDIR"
+  [ -s "$CERTDIR/$host.pem" ] && [ -s "$CERTDIR/$host-key.pem" ] && return 0
+  command -v mkcert >/dev/null 2>&1 || {
+    echo "ldev: mkcert is not installed — cannot issue a certificate for $host" >&2
+    return 1
+  }
+  mkcert -cert-file "$CERTDIR/$host.pem" -key-file "$CERTDIR/$host-key.pem" "$host" >/dev/null 2>&1
+}
+
+# `httpd -t` on the generated file ALONE, via a throwaway wrapper that loads exactly the
+# modules it needs. Checking the machine's real httpd.conf instead would answer a
+# different question: it fails for reasons that have nothing to do with this file, and it
+# cannot be run at all until the operator has already added the Include.
+httpd_validate() {
+  local f="$1" tmp root m out
+  command -v httpd >/dev/null 2>&1 || return 2
+  root="$BREW_PREFIX/opt/httpd"
+  [ -d "$root/lib/httpd/modules" ] || root="$BREW_PREFIX"
+  tmp="$(mktemp -d)" || return 2
+  {
+    printf 'ServerRoot "%s"\nServerName ldev-validate\nPidFile "%s/httpd.pid"\nErrorLog "%s/error.log"\n' "$root" "$tmp" "$tmp"
+    for m in mpm_event authz_core authz_host unixd mime dir log_config $HTTPD_MODULES; do
+      printf 'LoadModule %s_module lib/httpd/modules/mod_%s.so\n' "$m" "$m"
+    done
+    printf 'Include "%s"\n' "$f"
+  } > "$tmp/httpd.conf"
+  out="$(httpd -t -f "$tmp/httpd.conf" 2>&1)"
+  local rc=$?
+  rm -rf "$tmp"
+  [ "$rc" = 0 ] || printf '%s\n' "$out"
+  return "$rc"
+}
+
+cmd_apply_apache() {
+  mkdir -p "$CERTDIR" "$LOGDIR" "$(dirname "$VHOSTS")"
+
+  # The dashboard's own cert. It is also the FIRST :443 vhost, so it is what an unknown
+  # https host reaches — see the header comment in the template.
+  ensure_cert "$TLD" || { echo "ldev: no certificate for $TLD — not writing $VHOSTS" >&2; exit 1; }
+
+  sed -e "s|__TLD__|$TLD|g" -e "s|__SITES__|$SITES|g" -e "s|__DASHBOARD__|$DASHBOARD|g" \
+      -e "s|__PHP_FPM__|$PHP_FPM|g" -e "s|__CERTDIR__|$CERTDIR|g" -e "s|__LOGDIR__|$LOGDIR|g" \
+      "$REPO_DIR/templates/httpd-vhosts.tmpl" > "$VHOSTS.new"
+
+  local host dir name count=0 skipped=0
+  while IFS=$'\t' read -r host dir; do
+    [ -n "$host" ] || continue
+    name="${host%.$TLD}"
+    if ! ensure_cert "$host"; then
+      echo "ldev: skipping https://$host/ (no certificate)" >&2
+      skipped=$((skipped + 1))
+      continue
+    fi
+    sed -e "s|__NAME__|$name|g" -e "s|__TLD__|$TLD|g" -e "s|__SITE_DIR__|$dir|g" \
+        -e "s|__CERT__|$CERTDIR/$host.pem|g" -e "s|__KEY__|$CERTDIR/$host-key.pem|g" \
+        -e "s|__PHP_FPM__|$PHP_FPM|g" -e "s|__LOGDIR__|$LOGDIR|g" \
+        "$REPO_DIR/templates/httpd-vhost-site.tmpl" >> "$VHOSTS.new"
+    count=$((count + 1))
+  done < <(site_pairs)
+
+  # Validate BEFORE replacing the live file. A broken vhost file does not break one site,
+  # it stops httpd starting at all — and in this mode httpd is the machine's web server.
+  local err rc
+  err="$(httpd_validate "$VHOSTS.new")"; rc=$?
+  if [ "$rc" != 0 ] && [ "$rc" != 2 ]; then
+    echo "INVALID — keeping the previous $VHOSTS" >&2
+    printf '%s\n' "$err" >&2
+    rm -f "$VHOSTS.new"
+    exit 1
+  fi
+  mv "$VHOSTS.new" "$VHOSTS"
+  echo "wrote $VHOSTS ($count site$([ "$count" = 1 ] && echo "" || echo "s") over https)"
+  [ "$skipped" = 0 ] || echo "  $skipped skipped for want of a certificate"
+  [ "$rc" = 2 ] && echo "  (httpd is not installed — not syntax-checked)"
+
+  grep -qs "Include.*$VHOSTS" "$BREW_PREFIX/etc/httpd/httpd.conf" || {
+    printf '\n%sAdd it to httpd.conf, once:%s\n' "$YEL" "$R"
+    printf "  echo 'Include %s' >> %s/etc/httpd/httpd.conf\n" "$VHOSTS" "$BREW_PREFIX"
+  }
+  cmd_restart
+}
+
 cmd_apply() {
-  [ "$MODE" = "auto" ] || { echo "ldev: apply only applies to mode 'auto' (this install is '$MODE')"; exit 1; }
+  [ "$MODE" = "apache" ] && { cmd_apply_apache; return; }
+  [ "$MODE" = "auto" ] || { echo "ldev: apply only applies to modes 'auto' and 'apache' (this install is '$MODE')"; exit 1; }
   sed -e "s|__TLD__|$TLD|g" -e "s|__SITES__|$SITES|g" -e "s|__DASHBOARD__|$DASHBOARD|g" \
       -e "s|__PHP_FPM__|$PHP_FPM|g" -e "s|__ADMIN_PORT__|$ADMIN_PORT|g" \
       -e "s|__ASK_PORT__|$ASK_PORT|g" -e "s|__LOGDIR__|$LOGDIR|g" \
@@ -260,6 +473,12 @@ cmd_restart() {
   if [ "$MODE" = "auto" ]; then
     echo "restarting (needs sudo)..."
     sudo launchctl kickstart -k system/com.ldev.caddy && echo "restarted"
+  elif [ "$MODE" = "apache" ]; then
+    # Graceful first: it re-reads the config without dropping connections, and in this
+    # mode httpd is serving more than ldev. A full restart is the fallback, not the default.
+    echo "reloading httpd (needs sudo)..."
+    if sudo apachectl -k graceful 2>/dev/null; then echo "reloaded"
+    else sudo brew services restart httpd >/dev/null && echo "restarted"; fi
   else
     echo "mode '$MODE' has no single service to restart"
   fi
@@ -269,6 +488,10 @@ cmd_status() {
   printf '\n  TLD        .%s\n  Sites      %s\n  Mode       %s\n  Dashboard  %s\n\n' "$TLD" "$SITES" "$MODE" "$DASHBOARD"
   if [ "$MODE" = "auto" ]; then
     sudo launchctl print system/com.ldev.caddy 2>/dev/null | awk '/state =|pid =/{print "  "$0}' || echo "  service not loaded"
+  elif [ "$MODE" = "apache" ]; then
+    printf '  Vhosts     %s\n  Certs      %s\n' "$VHOSTS" "$CERTDIR"
+    if pgrep -x httpd >/dev/null 2>&1; then printf '  httpd      running (%s)\n' "$(pgrep -x httpd | tr '\n' ' ')"
+    else printf '  httpd      not running\n'; fi
   fi
   printf '\n'
 }

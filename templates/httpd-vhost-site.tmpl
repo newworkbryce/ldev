@@ -1,0 +1,28 @@
+
+# https://__NAME__.__TLD__  ->  __SITE_DIR__
+#
+# One vhost per host, because the certificate is per host: Apache picks the vhost by SNI
+# name and then presents whatever cert that vhost names. A wildcard *.__TLD__ cert is
+# rejected by browsers for a single-label parent, so there is no shortcut here.
+<VirtualHost *:443>
+	ServerName __NAME__.__TLD__
+	DocumentRoot "__SITE_DIR__"
+
+	SSLEngine on
+	SSLCertificateFile "__CERT__"
+	SSLCertificateKeyFile "__KEY__"
+
+	<Directory "__SITE_DIR__">
+		Options Indexes FollowSymLinks
+		AllowOverride All
+		Require local
+	</Directory>
+
+	DirectoryIndex index.php index.html
+	<FilesMatch "\.php$">
+		SetHandler "proxy:fcgi://__PHP_FPM__"
+	</FilesMatch>
+
+	ErrorLog "__LOGDIR__/__NAME__.error.log"
+	CustomLog "__LOGDIR__/__NAME__.access.log" common
+</VirtualHost>

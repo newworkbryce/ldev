@@ -27,7 +27,7 @@ already running simply never comes up, and what you see is a missing site rather
 error explaining why. If a per-site server seems not to start, check its admin port
 before anything else:
 
-    grep admin ~/Sites/<name>.ldev/Caddyfile
+    grep admin ~/Sites/<name>/Caddyfile
     lsof -nP -iTCP:2019 -sTCP:LISTEN
 
 If this site does not need the admin API at all, `admin off` is a valid answer and
@@ -37,14 +37,18 @@ removes the constraint entirely.
 
     ldev new shop
 
-writes `~/Sites/shop.ldev/Caddyfile` with a free port pair, validates it, and prints the
+writes `~/Sites/shop/Caddyfile` with a free port pair, validates it, and prints the
 URL and the command to start it. Ports already used by a sibling — or already bound by
 anything else on the machine — are skipped, so two sites created minutes apart do not
 collide.
 
+The folder is `shop`, with no `.ldev` on the end: the hostname lives in the Caddyfile,
+not in the directory name. Folders named `shop.ldev` by an earlier version are still
+found and still served — nothing needs renaming.
+
 Start it from the site directory:
 
-    cd ~/Sites/shop.ldev && caddy run
+    cd ~/Sites/shop && caddy run
 
 ## Keeping a site running
 
@@ -53,7 +57,7 @@ and set `WorkingDirectory` to the site directory:
 
 ```xml
 <key>WorkingDirectory</key>
-<string>/Users/you/Sites/shop.ldev</string>
+<string>/Users/you/Sites/shop</string>
 ```
 
 That is load-bearing whenever a Caddyfile uses a relative `root * .`: without it Caddy

@@ -118,7 +118,7 @@ if [ -z "$MODE" ]; then
 How should sites be served?
 
   ${B}1) auto${R}     One Caddy owns ports 80 and 443 for *.${TLD}.
-              A directory at ${SITES}/<name>.${TLD} is served at
+              A directory at ${SITES}/<name> is served at
               https://<name>.${TLD} with a certificate issued on first
               request. Unknown names fall back to the dashboard.
               ${DIM}Adding a site = creating a folder. Recommended.${R}
@@ -127,8 +127,10 @@ How should sites be served?
               Nothing owns 443. Each site needs its own Caddyfile and
               certificate. ${DIM}Choose this to preserve an existing per-site setup.${R}
 
-  ${B}3) apache${R}   httpd vhosts, first-vhost-per-port as the fallback.
-              ${DIM}Choose this if you already run Apache and want to keep it.${R}
+  ${B}3) apache${R}   httpd vhosts, generated from your site folders. Port 80 is a
+              wildcard vhost, so a new folder is served over http:// at once;
+              https://<name>.${TLD} needs a vhost and certificate per host, which
+              \`ldev apply\` writes. ${DIM}Choose this if Apache already owns 80/443.${R}
 
 EOF
   case "$(ask "Mode (1/2/3)" "1")" in
@@ -311,12 +313,52 @@ case "$MODE" in
     say "See docs/persite.md."
     ;;
   apache)
-    OUT="$BREW_PREFIX/etc/httpd/extra/httpd-vhosts-ldev.conf"
-    render "$REPO_DIR/templates/httpd-vhosts.tmpl" > "$OUT"
-    say "wrote $OUT"
-    say "${YEL}Include it from httpd.conf and restart:${R}"
-    say "  echo 'Include $OUT' >> $BREW_PREFIX/etc/httpd/httpd.conf"
-    say "  sudo brew services restart httpd"
+    HTTPD_CONF="$BREW_PREFIX/etc/httpd/httpd.conf"
+    VHOSTS="$HOME/.config/ldev/httpd-vhosts.conf"
+
+    # A stock Homebrew httpd.conf ships every module this needs commented out, and a
+    # missing one does not report itself as missing: httpd refuses to start on "Invalid
+    # command 'VirtualDocumentRoot'", which reads as a typo in a file the operator did
+    # not write. Enable them here, after saying so, or list them to do by hand.
+    MODS="vhost_alias rewrite proxy proxy_fcgi ssl socache_shmcb"
+    missing=()
+    for m in $MODS; do
+      grep -qE "^LoadModule ${m}_module" "$HTTPD_CONF" 2>/dev/null || missing+=("$m")
+    done
+    if [ ${#missing[@]} -gt 0 ]; then
+      say ""
+      say "These httpd modules are needed and not enabled: ${missing[*]}"
+      if confirm "Uncomment their LoadModule lines in $HTTPD_CONF?"; then
+        cp "$HTTPD_CONF" "$HTTPD_CONF.ldev-backup.$(date +%s)"
+        for m in "${missing[@]}"; do
+          sed -i '' -E "s|^#(LoadModule ${m}_module .*)|\1|" "$HTTPD_CONF"
+        done
+        say "enabled: ${missing[*]} (previous httpd.conf kept as $HTTPD_CONF.ldev-backup.*)"
+      else
+        say "${YEL}Uncomment these lines in $HTTPD_CONF yourself:${R}"
+        for m in "${missing[@]}"; do say "  LoadModule ${m}_module lib/httpd/modules/mod_${m}.so"; done
+      fi
+    else
+      say "All required httpd modules are already enabled."
+    fi
+
+    if ! grep -qs "Include.*$VHOSTS" "$HTTPD_CONF"; then
+      if confirm "Add 'Include $VHOSTS' to $HTTPD_CONF?"; then
+        printf '\n# ldev\nInclude %s\n' "$VHOSTS" >> "$HTTPD_CONF"
+        say "added the Include."
+      else
+        say "${YEL}Add it yourself:${R}"
+        say "  echo 'Include $VHOSTS' >> $HTTPD_CONF"
+      fi
+    fi
+
+    say ""
+    say "The vhost file itself is written by 'ldev apply', which needs the config file"
+    say "this installer is about to save — so run it once we are done:"
+    say "  ldev apply"
+    say ""
+    say "httpd must listen on 80 and 443 (Homebrew's default is 8080) and run as root to"
+    say "bind them: sudo brew services start httpd. 'ldev doctor' checks both."
     ;;
 esac
 
@@ -341,7 +383,10 @@ cat <<EOF
 
   Config      $CONFIG_FILE
   Dashboard   http://$TLD/
-  A new site  mkdir $SITES/<name>.$TLD   ->  https://<name>.$TLD
+  A new site  mkdir $SITES/<name>   ->  https://<name>.$TLD
+              (folders already named <name>.$TLD keep working too)$(
+    [ "$MODE" = "apache" ] && printf '\n              in this mode http:// is immediate; https:// after `ldev apply`'
+  )
 
   Check it:   $REPO_DIR/bin/ldev doctor
   Add bin to your PATH:

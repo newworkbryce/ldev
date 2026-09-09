@@ -1,0 +1,124 @@
+# ldev — generated file. Do not edit by hand; `ldev apply` overwrites it.
+#
+# MODE: apache (httpd vhosts, generated from the folders in __SITES__)
+#
+#   http://<name>.__TLD__   ->  __SITES__/<name>   (or __SITES__/<name>.__TLD__)
+#   https://<name>.__TLD__  ->  the same folder, from a per-site vhost appended below
+#   anything with no folder  ->  the dashboard
+#
+# WHY HTTP AND HTTPS ARE NOT SYMMETRIC HERE
+#
+# Apache has no on-demand certificate issuance. A wildcard *.__TLD__ certificate does
+# not work either — browsers reject *.__TLD__ for <name>.__TLD__ with
+# ERR_CERT_COMMON_NAME_INVALID, since __TLD__ is a single label. So every HTTPS host
+# needs its own vhost naming its own certificate, and `ldev apply` writes one per site
+# folder it finds, with a certificate from mkcert.
+#
+# Port 80 needs none of that, so port 80 IS wildcard: mod_vhost_alias derives the
+# document root from the hostname. A new folder is reachable over http:// immediately,
+# and over https:// after the next `ldev apply`. In auto mode both are immediate; this
+# is the concrete cost of keeping Apache as the local web server.
+#
+# REQUIRES these modules, which a stock Homebrew httpd.conf ships commented out:
+#   mod_vhost_alias  mod_rewrite  mod_proxy  mod_proxy_fcgi  mod_ssl  mod_socache_shmcb
+# `ldev doctor` names the missing ones.
+#
+# Apache must also be listening on 80 and 443. This file deliberately declares no
+# Listen: a duplicate Listen for a port httpd.conf already has is a fatal startup
+# error, and taking the whole web server down to add a dev TLD is not a trade worth
+# making. `ldev doctor` checks the ports instead.
+
+# Everything is served to this machine only — `Require local`, repeated per vhost
+# because Apache scopes it per <Directory>. It matches the loopback bind in the Caddy
+# templates, and for the same reason: a certificate is not a network boundary, and
+# ~/Sites should not be readable by a cafe network. Widen it deliberately if you want
+# to test from a phone.
+
+# ---------------------------------------------------------------- the dashboard, HTTPS
+#
+# FIRST among the :443 vhosts on purpose: Apache serves the first vhost on a port to
+# any request whose hostname matches no other one. So an unknown https://<name>.__TLD__
+# reaches the dashboard and can tell you what does exist. The certificate will not match
+# that name — nothing can make it, without a cert per hostname that has no folder — so
+# the browser warns first. Over http:// the same name lands there cleanly.
+<VirtualHost *:443>
+	ServerName __TLD__
+	DocumentRoot "__DASHBOARD__"
+
+	SSLEngine on
+	SSLCertificateFile "__CERTDIR__/__TLD__.pem"
+	SSLCertificateKeyFile "__CERTDIR__/__TLD__-key.pem"
+
+	<Directory "__DASHBOARD__">
+		Options FollowSymLinks
+		AllowOverride All
+		Require local
+	</Directory>
+
+	DirectoryIndex index.php index.html
+	<FilesMatch "\.php$">
+		SetHandler "proxy:fcgi://__PHP_FPM__"
+	</FilesMatch>
+
+	ErrorLog "__LOGDIR__/dashboard.error.log"
+	CustomLog "__LOGDIR__/dashboard.access.log" common
+</VirtualHost>
+
+# ---------------------------------------------------------------- every host, HTTP
+<VirtualHost *:80>
+	ServerName __TLD__
+	ServerAlias *.__TLD__
+
+	# The document root IS the hostname: %1 is the first dot-separated label, so
+	# shop.__TLD__ resolves to __SITES__/shop. This is the whole of "a folder is a site"
+	# on the Apache side, and it is why no per-site config is needed over HTTP.
+	VirtualDocumentRoot "__SITES__/%1"
+
+	<Directory "__SITES__">
+		Options Indexes FollowSymLinks
+		AllowOverride All
+		Require local
+	</Directory>
+	<Directory "__DASHBOARD__">
+		Options FollowSymLinks
+		AllowOverride All
+		Require local
+	</Directory>
+
+	DirectoryIndex index.php index.html
+	<FilesMatch "\.php$">
+		SetHandler "proxy:fcgi://__PHP_FPM__"
+	</FilesMatch>
+
+	RewriteEngine On
+
+	# The bare TLD is the dashboard's own address. Checked first, because the label
+	# capture below does not match a hostname with no label in front of the TLD.
+	RewriteCond %{HTTP_HOST} ^__TLD__$ [NC]
+	RewriteRule ^/?(.*)$ "__DASHBOARD__/$1" [L]
+
+	# Stash the site name in an env var rather than using a %1 backreference: %N refers
+	# to the LAST RewriteCond that matched, so the -d tests below would clobber it and
+	# every rule after the first would silently look at the wrong path.
+	RewriteCond %{HTTP_HOST} ^([^.]+)\.__TLD__$ [NC]
+	RewriteRule ^ - [E=LDEV_SITE:%1]
+
+	# Folders named the old way (<name>.__TLD__) are still served, and lose only to a
+	# plain folder of the same name — the same precedence as auto mode, so a site does
+	# not change meaning when the serving mode does.
+	RewriteCond "__SITES__/%{ENV:LDEV_SITE}" !-d
+	RewriteCond "__SITES__/%{ENV:LDEV_SITE}.__TLD__" -d
+	RewriteRule ^/?(.*)$ "__SITES__/%{ENV:LDEV_SITE}.__TLD__/$1" [L]
+
+	# No folder either way: the dashboard, so a typo or a half-set-up project says what
+	# exists instead of returning a bare 404.
+	RewriteCond "__SITES__/%{ENV:LDEV_SITE}" !-d
+	RewriteCond "__SITES__/%{ENV:LDEV_SITE}.__TLD__" !-d
+	RewriteRule ^/?(.*)$ "__DASHBOARD__/$1" [L]
+
+	ErrorLog "__LOGDIR__/error.log"
+	CustomLog "__LOGDIR__/access.log" common
+</VirtualHost>
+
+# ---------------------------------------------------------------- per-site HTTPS vhosts
+# `ldev apply` appends one block here for every folder in __SITES__.

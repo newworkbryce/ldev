@@ -3,12 +3,13 @@
 # MODE: auto (one Caddy owns 80 + 443 for the whole TLD)
 #
 # How a request is served, with no per-site configuration:
-#   https://<name>.__TLD__  ->  __SITES__/<name>.__TLD__
+#   https://<name>.__TLD__  ->  __SITES__/<name>   (or __SITES__/<name>.__TLD__)
 #   ...if that directory has an index.php  -> PHP via FastCGI
 #   ...if it has an index.html             -> static files
-#   ...if it does not exist                -> the dashboard (the fallback)
+#   ...if neither directory exists         -> the dashboard (the fallback)
 #
-# So adding a site means creating a directory. Nothing else.
+# So adding a site means creating a directory named after the site. Nothing else:
+# no .__TLD__ suffix on the folder, no config, no restart.
 
 {
 	admin localhost:__ADMIN_PORT__
@@ -55,7 +56,24 @@ http://127.0.0.1:__ASK_PORT__ {
 
 	# {labels.1} is the label to the left of the TLD: for shop.__TLD__ it is "shop".
 	# A multi-label TLD would shift this index, which is why install.sh rejects one.
+	#
+	# Two directory layouts answer to that name, and the PLAIN one wins:
+	#
+	#   __SITES__/shop            ->  https://shop.__TLD__     (what `ldev new` writes)
+	#   __SITES__/shop.__TLD__    ->  https://shop.__TLD__     (older installs, still served)
+	#
+	# The suffix was never load-bearing — the hostname supplies it — and requiring it
+	# meant every existing project folder had to be renamed before it could be served.
+	# Caddy applies these in order and the last matching `root` wins, so the suffixed
+	# form is set unconditionally as the fallback and the plain folder overrides it
+	# whenever one exists. A site with both folders is served from the plain one.
 	root * __SITES__/{labels.1}.__TLD__
+
+	@plain file {
+		root __SITES__/{labels.1}
+		try_files /index.php /index.html
+	}
+	root @plain __SITES__/{labels.1}
 
 	encode gzip
 
@@ -105,7 +123,16 @@ http://*.localhost {
 	# root — with the directory listing below to browse it by.
 	bind 127.0.0.1 ::1
 
+	# Same two layouts as the block above, resolved the same way: plain folder wins,
+	# suffixed folder still works. Both origins must agree on which directory a name
+	# means, or a site would render differently depending on how you reached it.
 	root * __SITES__/{labels.1}.__TLD__
+
+	@plain file {
+		root __SITES__/{labels.1}
+		try_files /index.php /index.html
+	}
+	root @plain __SITES__/{labels.1}
 
 	encode gzip
 
