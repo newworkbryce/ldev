@@ -1,0 +1,114 @@
+{
+  "version": "0.1.0",
+  "id": "af94436a-cdbb-4a34-b048-9422f8bb8a1d",
+  "timestamp": "2026-09-09T15:45:47Z",
+  "vcs": {
+    "type": "git",
+    "revision": "b5382115e0aee701df4899995056005e47c81387"
+  },
+  "tool": {
+    "name": "triaj",
+    "version": "1.3.1"
+  },
+  "files": [
+    {
+      "path": "install.sh",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/eb23749b-b71d-44b3-ab30-5c8053a65845",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 23,
+              "end_line": 23,
+              "content_hash": "sha256:cc5bbf430a7c5694a4bf8247aa0387c09f50c0495813b348ac477d0f72a469fb",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 46,
+              "end_line": 46,
+              "content_hash": "sha256:6f5ea3fe8d3f53b814ab66b6432d6e504656d303c01d911b839a946ed9be92c9",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 197,
+              "end_line": 197,
+              "content_hash": "sha256:911de95b1cb0aa2543ff471e44d2db6a404bebbeef3b150e61c135a072bc5462",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 236,
+              "end_line": 242,
+              "content_hash": "sha256:5dd0cf906e544a8ed8796f18e2e20bb8eee0e904164593d3247d1c8656a144f7",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 302,
+              "end_line": 302,
+              "content_hash": "sha256:f590ee25d377b3c4da2b2e8d48b588894d93263aca17f0b1589eb299442ac203",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "test/tui-menu.test.sh",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/eb23749b-b71d-44b3-ab30-5c8053a65845",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 124,
+              "end_line": 133,
+              "content_hash": "sha256:9dc6061370d92a01f9925babd2344b8fcf157e78be86c52034e19e46de616c03",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 204,
+              "end_line": 205,
+              "content_hash": "sha256:2ab10c22c4dc3a39c98a41abfdd9b69dbddaf85b5cc9e4e7782f2822748d0fc7",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "triaj": {
+      "task": "Remove the apache mode, which never worked",
+      "status": "Waiting",
+      "agent": "claude-code",
+      "attribution_granularity": "commit"
+    }
+  }
+}
