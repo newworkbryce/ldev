@@ -91,21 +91,30 @@ LDEV_FORCE_TUI=1 LDEV_TTY="$TMP/keys" "$SHELL_UNDER_TEST" -c "
 check "a finished menu leaves the cursor shown" \
   "$(tail -c 6 "$TMP/cur" | grep -cF "$SHOW" || true)" "1"
 
-# Ctrl-C in the middle of a menu. The keys come from a fifo that never delivers,
+# Killed in the middle of a menu. The keys come from a fifo that never delivers,
 # so the menu is parked in its read when the signal lands.
-rm -f "$TMP/fifo"; mkfifo "$TMP/fifo"
-( exec 3>"$TMP/fifo"; sleep 6 ) &
-holder=$!
-LDEV_FORCE_TUI=1 LDEV_TTY="$TMP/fifo" "$SHELL_UNDER_TEST" -c "
-  . '$REPO/lib/tui.sh'; tui_init; menu_select T 0 one '' two '' || true
-" >"$TMP/intr" 2>/dev/null &
-victim=$!
-sleep 1
-kill -INT "$victim" 2>/dev/null
-wait "$victim" 2>/dev/null; intr_rc=$?
-kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
-check "SIGINT restores the cursor" "$(tail -c 8 "$TMP/intr" | grep -cF "$SHOW" || true)" "1"
-check "SIGINT exits 130"           "$intr_rc"                                           "130"
+#
+# The signal is TERM rather than INT only because of how this test has to run: a
+# job started in the background by a non-interactive shell inherits SIGINT as
+# ignored, and a shell that inherits an ignored signal cannot trap it at all. So
+# Ctrl-C itself is untestable from here; TERM exercises the same handler.
+signal_run() { # signal_run <signal> <expected rc> <label>
+  rm -f "$TMP/fifo"; mkfifo "$TMP/fifo"
+  ( exec 3>"$TMP/fifo"; sleep 8 ) &
+  local holder=$! victim rc
+  LDEV_FORCE_TUI=1 LDEV_TTY="$TMP/fifo" "$SHELL_UNDER_TEST" -c "
+    . '$REPO/lib/tui.sh'; tui_init; menu_select T 0 one '' two '' || true
+  " >"$TMP/sig" 2>/dev/null &
+  victim=$!
+  sleep 1
+  kill -"$1" "$victim" 2>/dev/null
+  wait "$victim" 2>/dev/null; rc=$?
+  kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
+  check "SIG$1 restores the cursor" "$(tail -c 8 "$TMP/sig" | grep -cF "$SHOW" || true)" "1"
+  check "SIG$1 exits $2"            "$rc"                                                "$2"
+}
+signal_run TERM 143
+signal_run HUP 129
 
 echo "--- plain mode never reads a key"
 plain=$(LDEV_PLAIN=1 LDEV_TTY=/dev/null "$SHELL_UNDER_TEST" -c "
