@@ -31,6 +31,9 @@ echo
 for s in shop blog; do
   f="$TMP/Sites/$s.ldev/Caddyfile"
   if [ -f "$f" ]; then echo "  ok   $s Caddyfile written"; pass=$((pass+1)); else echo "  FAIL $s Caddyfile missing"; fail=$((fail+1)); continue; fi
+  # No caddy means nothing to validate against, which is not the same as invalid — reporting
+  # it as a failure would blame the config for the machine.
+  if ! command -v caddy >/dev/null 2>&1; then echo "  skip $s validates (caddy not on PATH)"; continue; fi
   if caddy validate --config "$f" >/dev/null 2>&1; then echo "  ok   $s validates"; pass=$((pass+1)); else echo "  FAIL $s does not validate"; caddy validate --config "$f" 2>&1 | tail -3; fail=$((fail+1)); fi
 done
 

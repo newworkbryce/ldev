@@ -195,6 +195,13 @@ persite_next_ports() {
 cmd_new() {
   local name="${1:?usage: ldev new <name>}"
   name="${name%.$TLD}"
+  # A hostname label, and nothing else. `ldev new ../../foo` would otherwise write outside
+  # $SITES — and outside the glob the port allocator scans, so the next site would be handed
+  # a port this one already holds. A `|` would also break the sed replacement below.
+  [[ "$name" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || {
+    echo "ldev: '$name' is not a site name — letters, digits, dot, dash and underscore only" >&2
+    exit 1
+  }
   local dir="$SITES/$name.$TLD"
   [ -d "$dir" ] && { echo "ldev: $dir already exists"; exit 1; }
   mkdir -p "$dir"
