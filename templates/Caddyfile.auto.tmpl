@@ -69,6 +69,11 @@ http://127.0.0.1:__ASK_PORT__ {
 	# whenever one exists. A site with both folders is served from the plain one.
 	root * __SITES__/{labels.1}.__TLD__
 
+	# The match is the hostname, so it is lowercase and has no spaces. macOS is
+	# case-insensitive by default, so __SITES__/ClothingStore does answer to
+	# clothingstore.__TLD__ — but __SITES__/"Scope Canvas" has no reachable hostname at
+	# all, because nothing turns a space back into a dash. `ldev list` counts those and
+	# says to rename them, rather than printing a URL that cannot work.
 	@plain file {
 		root __SITES__/{labels.1}
 		try_files /index.php /index.html
@@ -128,6 +133,11 @@ http://*.localhost {
 	# means, or a site would render differently depending on how you reached it.
 	root * __SITES__/{labels.1}.__TLD__
 
+	# The match is the hostname, so it is lowercase and has no spaces. macOS is
+	# case-insensitive by default, so __SITES__/ClothingStore does answer to
+	# clothingstore.__TLD__ — but __SITES__/"Scope Canvas" has no reachable hostname at
+	# all, because nothing turns a space back into a dash. `ldev list` counts those and
+	# says to rename them, rather than printing a URL that cannot work.
 	@plain file {
 		root __SITES__/{labels.1}
 		try_files /index.php /index.html

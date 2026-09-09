@@ -53,9 +53,8 @@ The TLD is a setting. `.ldev` is only the default — install it as `.test`, `.w
 
 - **macOS** — the installer uses `/etc/resolver` and `launchd`, both macOS-specific.
 - **[Homebrew](https://brew.sh)**.
-- `dnsmasq`, `mkcert`, `php`, and `node` (for the dashboard build) — **installed for
-  you** if they are missing, after asking.
-- `caddy`, or `httpd` in apache mode — likewise.
+- `dnsmasq`, `caddy`, `mkcert`, `php`, and `node` (for the dashboard build) —
+  **installed for you** if they are missing, after asking.
 - `sudo` for three things, each announced before it happens: the resolver file, the local
   CA, and the launchd service. Every one of them can be declined and run by hand.
 
@@ -83,7 +82,7 @@ Non-interactive:
 |---|---|
 | `--tld <name>` | The TLD, one label, no dot. Default `ldev`. |
 | `--sites <dir>` | Where your site folders live. Default `~/Sites`. |
-| `--mode auto\|apache\|persite` | Serving mode; see below. Default `auto`. |
+| `--mode auto\|persite` | Serving mode; see below. Default `auto`. |
 | `--php-fpm <host:port>` | PHP-FPM address. Default `127.0.0.1:9000`. |
 | `--skip-dns` | Leave `/etc/resolver` and dnsmasq alone. |
 | `--yes`, `-y` | Answer yes to every confirmation. |
@@ -148,6 +147,17 @@ doctor` reports it:
 both.ldev    static    https://both.ldev/  (shadowed by both/)
 ```
 
+**A folder name has to be able to *be* a hostname.** Caddy matches on the `Host:` header,
+which is lowercase and cannot contain a space:
+
+| Folder | Reachable at |
+|---|---|
+| `~/Sites/ClothingStore` | `https://clothingstore.ldev` — macOS is case-insensitive, so this works |
+| `~/Sites/Scope Canvas` | ❌ nothing — no URL can carry that space |
+
+`ldev list` counts the unreachable ones and says to rename them, rather than printing a
+URL that cannot work.
+
 ---
 
 ## 🧭 Commands
@@ -156,7 +166,7 @@ both.ldev    static    https://both.ldev/  (shadowed by both/)
 ldev doctor      # check each layer separately and say which one is broken
 ldev list        # sites found under the sites directory, and their type
 ldev new <name>  # create a site directory, live immediately
-ldev apply       # re-render the server config and restart (auto + apache modes)
+ldev apply       # re-render the server config and restart (auto mode)
 ldev restart     # restart the server
 ldev status      # is the service running
 ldev config      # print the saved configuration
@@ -179,40 +189,16 @@ Chosen during install, because the right answer depends on what the machine alre
 | Mode | What it does | Choose it when |
 |---|---|---|
 | ⚡ **auto** | One Caddy owns 80 and 443 for the whole TLD. Sites resolve by directory name; certificates are issued per host on first request; unknown hosts fall back to the dashboard. | **Default.** Nothing else needs those ports. |
-| 🐘 **apache** | httpd vhosts generated from your folders: a wildcard vhost on port 80, plus one HTTPS vhost and certificate per site, written by `ldev apply`. See [docs/apache.md](docs/apache.md). | Apache already owns 80/443 and you want to keep it. |
 | 🧱 **persite** | One Caddy per site on its own high port (8443, 8444, …), each with its own Caddyfile and certificate. See [docs/persite.md](docs/persite.md). | You already have per-site servers and want to keep them. |
 
-Only **auto** makes a new site work over HTTPS with no configuration at all. The other
-two exist so that installing this does not tear down a setup that already works.
+Only **auto** makes a new site work with no configuration at all. `persite` is there so
+that installing this does not tear down a setup that already works.
 
-### 🐘 Apache mode, and where it differs
-
-Apache has no on-demand certificate issuance, and a wildcard `*.ldev` certificate does not
-work either — browsers reject it for `shop.ldev`, because `.ldev` is a single label. So
-the two protocols are served by different machinery:
-
-| | How | When a new folder works |
-|---|---|---|
-| **HTTP** | One wildcard vhost. `mod_vhost_alias` derives the document root from the hostname. | Immediately |
-| **HTTPS** | One vhost per host, each naming its own mkcert certificate. | After `ldev apply` |
-
-```sh
-mkdir ~/Sites/shop     # http://shop.ldev works now
-ldev apply             # writes shop's vhost + certificate, reloads httpd
-                       # https://shop.ldev works now
-```
-
-`ldev apply` regenerates `~/.config/ldev/httpd-vhosts.conf` from whatever folders exist,
-issues any certificate it is missing into `~/.config/ldev/certs/`, **syntax-checks the
-result with `httpd -t` before replacing the live file**, and reloads httpd gracefully. A
-generated vhost file that does not parse would stop httpd starting at all — and in this
-mode httpd is the machine's web server, not just ldev's — so the check is not optional.
-
-The installer enables the modules this needs (`vhost_alias`, `rewrite`, `proxy`,
-`proxy_fcgi`, `ssl`, `socache_shmcb`), which a stock Homebrew `httpd.conf` ships
-commented out, after asking and after backing the file up. httpd must also listen on 80
-and 443 — Homebrew's default is 8080 — and run as root to bind them. `ldev doctor` checks
-every one of those separately.
+> ℹ️ An `apache` mode was named in an earlier config format and is **not supported**.
+> Serving the TLD from httpd needs a vhost and a certificate per host — httpd has no
+> on-demand issuance, and a `*.ldev` certificate is rejected by browsers for `shop.ldev` —
+> which is a different product from "a folder is a site". The installer refuses it by
+> name rather than accepting a mode nothing downstream implements.
 
 ---
 
@@ -255,10 +241,6 @@ Four layers, each replaceable:
 The generated config is `~/.config/ldev/Caddyfile`, rendered from
 [`templates/Caddyfile.auto.tmpl`](templates/Caddyfile.auto.tmpl) — which is commented at
 length, and is the authoritative description of the routing.
-
-Apache mode keeps the same four layers and swaps the middle two: `mod_vhost_alias` and
-`mod_rewrite` for routing, per-host mkcert certificates for TLS. See
-[docs/apache.md](docs/apache.md).
 
 ---
 
@@ -323,8 +305,7 @@ fixes whatever failed. The common ones:
 | 📄 Blank page on a PHP site | PHP-FPM is not listening | `brew services start php` |
 | 🧭 You get the dashboard instead of your site | The folder has no `index.php` or `index.html` — or a plain folder is shadowing a `.ldev` one | `ldev list` |
 | 🤖 A headless browser loads nothing | It refuses custom TLDs | Use `http://<name>.localhost/` |
-| 🐘 HTTP works but HTTPS does not (apache mode) | The site has no vhost or certificate yet | `ldev apply` |
-| 🐘 httpd will not start after `ldev apply` (apache mode) | A required module is not loaded — the error names a *directive*, not the module | `ldev doctor` names the module |
+| 🔤 A folder never appears | Its name cannot be a hostname — a space, or another character a `Host:` header cannot carry | `ldev list` counts these; rename them |
 | 🧱 A per-site server "does not start" | Two sites sharing an admin port — the second exits silently | [docs/persite.md](docs/persite.md) |
 
 Logs are in `~/Library/Logs/ldev/`.
@@ -342,10 +323,7 @@ instead.
 | `$(brew --prefix)/etc/dnsmasq.conf` | you | one `conf-dir` line, if not already present |
 | `/etc/resolver/<tld>` | root | routes that TLD to dnsmasq |
 | `~/.config/ldev/config` | you | saved settings |
-| `~/.config/ldev/Caddyfile` | you | generated server config (auto mode) |
-| `~/.config/ldev/httpd-vhosts.conf` | you | generated vhosts (apache mode) |
-| `~/.config/ldev/certs/` | you | one mkcert pair per host (apache mode) |
-| `$(brew --prefix)/etc/httpd/httpd.conf` | you | apache mode: an `Include` line, and `LoadModule` lines uncommented — backed up first |
+| `~/.config/ldev/Caddyfile` | you | generated server config |
 | `~/Library/Logs/ldev/` | you | access logs |
 | `/Library/LaunchDaemons/com.ldev.caddy.plist` | root | starts Caddy on 80/443 at boot |
 | system trust store | root | trusts the local CA, once |
@@ -360,7 +338,6 @@ Plain bash, no framework. Each script sets up a throwaway tree, asserts, and cle
 
 ```sh
 bash test/auto-root.test.sh      # hostname → folder, both layouts, on a real Caddy
-bash test/apache-vhosts.test.sh  # ldev apply's vhosts, checked and served by a real httpd
 bash test/persite-new.test.sh    # ldev new writes a valid, non-colliding site config
 bash test/persite-ports.test.sh  # the site/admin port allocator
 ```
@@ -379,20 +356,12 @@ sudo rm -f /Library/LaunchDaemons/com.ldev.caddy.plist
 sudo rm -f /etc/resolver/ldev
 rm -f "$(brew --prefix)/etc/dnsmasq.d/ldev.conf"
 sudo brew services restart dnsmasq
-rm -rf ~/.config/ldev ~/Library/Logs/ldev   # config, generated Caddyfile/vhosts, certs
+rm -rf ~/.config/ldev ~/Library/Logs/ldev   # config and the generated Caddyfile
 caddy untrust                    # optional: remove the local CA from the trust store
 ```
 
 Then remove the `conf-dir` line `install.sh` appended to
 `$(brew --prefix)/etc/dnsmasq.conf`, and drop `bin/` from your `PATH`.
-
-Apache mode also edited `httpd.conf`. Remove the `Include` line it added, and — if you
-want the modules off again — restore the backup it made first:
-
-```sh
-ls "$(brew --prefix)"/etc/httpd/httpd.conf.ldev-backup.*   # newest is the one before install
-sudo brew services restart httpd
-```
 
 **Your site folders are never touched** — uninstalling stops them being served, and
 nothing more.

@@ -71,6 +71,20 @@ else echo "  ok   new refuses when <name>.ldev already exists"; pass=$((pass+1))
 if [ -d "$TMP/Sites/legacy" ]; then echo "  FAIL a shadowing 'legacy' folder was created"; fail=$((fail+1))
 else echo "  ok   no shadowing folder created"; pass=$((pass+1)); fi
 
+# `ldev list` must not print a URL for a directory no Host header can name, and must say
+# how many it left out rather than dropping them silently.
+mkdir -p "$TMP/Sites/Scope Canvas" "$TMP/Sites/ClothingStore"
+listing="$(run list 2>&1)"
+if printf '%s' "$listing" | grep -q 'scope canvas'; then
+  echo "  FAIL list printed a URL for a name with a space"; fail=$((fail+1))
+else echo "  ok   list omits a name that cannot be a hostname"; pass=$((pass+1)); fi
+if printf '%s' "$listing" | grep -q '1 directory(s) skipped'; then
+  echo "  ok   list says how many it skipped"; pass=$((pass+1))
+else echo "  FAIL list did not report the skipped directory"; fail=$((fail+1)); fi
+if printf '%s' "$listing" | grep -q 'https://clothingstore.ldev/'; then
+  echo "  ok   list lowercases a mixed-case folder"; pass=$((pass+1))
+else echo "  FAIL list did not lowercase ClothingStore"; fail=$((fail+1)); fi
+
 rm -rf "$TMP"
 echo
 echo "passed=$pass failed=$fail"

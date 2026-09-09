@@ -15,18 +15,21 @@ REPO="$(cd "$(dirname "$0")/.." && pwd)"
 TMP=$(mktemp -d /tmp/ldev-auto-XXXX)
 SITES="$TMP/Sites"; DASH="$TMP/dash"; PORT=8899
 mkdir -p "$SITES/shop" "$SITES/blog.ldev" "$SITES/both" "$SITES/both.ldev" "$DASH" "$TMP/logs"
+mkdir -p "$SITES/ClothingStore" "$SITES/Scope Canvas"
 echo PLAIN-SHOP  > "$SITES/shop/index.html"
 echo OLD-BLOG    > "$SITES/blog.ldev/index.html"
 echo PLAIN-BOTH  > "$SITES/both/index.html"
 echo OLD-BOTH    > "$SITES/both.ldev/index.html"
+echo MIXED-CASE  > "$SITES/ClothingStore/index.html"
+echo UNREACHABLE > "$SITES/Scope Canvas/index.html"
 echo DASHBOARD   > "$DASH/index.html"
 
 pass=0; fail=0
 check() { if [ "$2" = "$3" ]; then echo "  ok   $1 -> $2"; pass=$((pass+1)); else echo "  FAIL $1: got '$2' want '$3'"; fail=$((fail+1)); fi; }
 
 sed -e "s|__TLD__|ldev|g" -e "s|__SITES__|$SITES|g" -e "s|__DASHBOARD__|$DASH|g" \
-    -e "s|__PHP_FPM__|127.0.0.1:9000|g" -e "s|__ADMIN_PORT__|2019|g" \
-    -e "s|__ASK_PORT__|2018|g" -e "s|__LOGDIR__|$TMP/logs|g" \
+    -e "s|__PHP_FPM__|127.0.0.1:9000|g" -e "s|__ADMIN_PORT__|12019|g" \
+    -e "s|__ASK_PORT__|12018|g" -e "s|__LOGDIR__|$TMP/logs|g" \
     "$REPO/templates/Caddyfile.auto.tmpl" > "$TMP/Caddyfile"
 
 if grep -q '__[A-Z_]*__' "$TMP/Caddyfile"; then
@@ -62,10 +65,15 @@ awk -v port="$PORT" '
   { print }
 ' "$TMP/Caddyfile" > "$TMP/serve/Caddyfile"
 
-if nc -z 127.0.0.1 "$PORT" 2>/dev/null; then
-  echo "  skip serving checks (something already listens on $PORT)"
-  rm -rf "$TMP"; echo; echo "passed=$pass failed=$fail"; exit 0
-fi
+# The ask endpoint keeps its own port even here — the block is part of the file under
+# test — so it is rendered high and out of the way of a real ldev install (or another
+# session's test) holding the usual 2018.
+for p in "$PORT" 12018; do
+  if nc -z 127.0.0.1 "$p" 2>/dev/null; then
+    echo "  skip serving checks (something already listens on $p)"
+    rm -rf "$TMP"; echo; echo "passed=$pass failed=$fail"; exit 0
+  fi
+done
 
 if ! caddy start --config "$TMP/serve/Caddyfile" --pidfile "$TMP/caddy.pid" >"$TMP/caddy.log" 2>&1; then
   echo "  FAIL test server did not start"; tail -5 "$TMP/caddy.log" | sed 's/^/       /'; fail=$((fail+1))
@@ -88,6 +96,16 @@ check "bare TLD is the dashboard" "$(get ldev)"          "DASHBOARD"
 check ".localhost plain"        "$(get shop.localhost)"  "PLAIN-SHOP"
 check ".localhost old way"      "$(get blog.localhost)"  "OLD-BLOG"
 check ".localhost plain wins"   "$(get both.localhost)"  "PLAIN-BOTH"
+
+# A Host header is lowercase, so a mixed-case folder is only reachable because macOS is
+# case-insensitive — and a folder with a space is not reachable at all, by anything.
+check "mixed-case folder"       "$(get clothingstore.ldev)" "MIXED-CASE"
+# Not a 404 and not the dashboard — the request never becomes a valid one. Asserting
+# "anything but the folder's content" is the honest form: the point is that no URL
+# reaches it, not which particular refusal comes back.
+if [ "$(get 'scope canvas.ldev')" = "UNREACHABLE" ]; then
+  echo "  FAIL a folder with a space was served"; fail=$((fail+1))
+else echo "  ok   folder with a space is unreachable"; pass=$((pass+1)); fi
 
 echo
 echo "passed=$pass failed=$fail"
