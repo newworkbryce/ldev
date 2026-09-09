@@ -176,11 +176,19 @@ port_busy() { # port -> 0 when something is listening on it
 # lsof only shows sockets this user owns, so a root-owned Caddy on 443 is invisible from
 # here. "in use, owner needs sudo to see" is the honest answer in that case; reporting the
 # port as free because we cannot see the owner is how the collision stayed hidden.
+#
+# "or nothing" has to include "and succeeds". lsof exits 1 when it matches no
+# socket it can see, which is the ordinary case here rather than an error — a
+# root-owned Caddy on 80 is invisible to this user. With `set -euo pipefail`,
+# pipefail hands that 1 to the pipeline, `owner="$(port_owner 80)"` takes it as
+# the status of the assignment, and set -e kills the installer where it stands:
+# right after the banner, having asked nothing and said nothing. The detection
+# that exists to find a busy port died on finding one.
 port_owner() { # port -> "caddy pid 42 (root)" or ""
   [ "${LDEV_SKIP_PORT_PROBE:-0}" = 1 ] && return 0
   command -v lsof >/dev/null 2>&1 || return 0
   lsof -nP -iTCP:"$1" -sTCP:LISTEN 2>/dev/null \
-    | awk 'NR > 1 { printf "%s pid %s (%s)", $1, $2, $3; exit }'
+    | awk 'NR > 1 { printf "%s pid %s (%s)", $1, $2, $3; exit }' || true
 }
 
 # The ports a per-site Caddyfile claims: the address on a site block, and the admin port.
@@ -359,7 +367,18 @@ takedown_system() {
   fi
   sudo launchctl bootout "system/$DAEMON_LABEL" >/dev/null 2>&1 || true
   launchd_enable_label
-  sudo rm -f "$DAEMON_PLIST" >/dev/null 2>&1 || ui_warn "could not remove $DAEMON_PLIST"
+  sudo rm -f "$DAEMON_PLIST" >/dev/null 2>&1 || true
+  # Ask the disk rather than the exit status. A takedown that is reported as done and did
+  # not happen is the whole defect: the next step would install the other topology on top
+  # of a service still holding 80 and 443.
+  if [ -e "$DAEMON_PLIST" ]; then
+    ui_warn "$DAEMON_PLIST is still there — the service was not taken down."
+    ui_hint "run these yourself and start the installer again:"
+    ui_cmd "sudo launchctl bootout system/$DAEMON_LABEL"
+    ui_cmd "sudo launchctl enable system/$DAEMON_LABEL"
+    ui_cmd "sudo rm -f $DAEMON_PLIST"
+    return 1
+  fi
   ui_ok "system service stopped and $DAEMON_PLIST removed"
   # launchd closes the socket a moment after the bootout returns, and "the port is free"
   # is the only claim worth making here — the whole defect was believing a takedown that
