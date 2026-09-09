@@ -389,6 +389,20 @@ EOF
   return 0
 }
 
+echo "--- installer: the real port probe runs only when there is an install to explain"
+# The rest of this section sets LDEV_SKIP_PORT_PROBE=1, so the probe never runs — and the
+# probe only runs at all once something has been found, which is why a probe-free run
+# proves nothing about it. Plant an installation and let the probe loose on whatever this
+# machine is really doing: lsof exits 1 on a socket it cannot see into, and under
+# `set -o pipefail` that used to end the install a few lines after the banner.
+plant_existing auto 1 1 1
+probe2="$(env -u LDEV_SKIP_PORT_PROBE HOME="$INST_HOME" PATH="$STUB:$PATH" LDEV_TTY=/dev/null \
+  "$SHELL_UNDER_TEST" "$REPO/install.sh" --skip-dns 2>&1 || true)"
+check "the probe did not kill the run" "$(saw_text "$probe2" 'already installed here')"   "yes"
+check "it got as far as the questions" "$(saw_text "$probe2" 'Configuration')"            "yes"
+check "and still fails closed"         "$(saw_text "$probe2" 'aborted')"                  "yes"
+check "the probe wrote nothing"        "$(grep -c '^MODE=auto$' "$INST_HOME/.config/ldev/config")" "1"
+
 echo "--- installer: it finds the installation it is about to replace"
 plant_existing auto 1 1 1
 INST_KEEP=1 install_drive "5"          # "5" on the existing-install menu is Quit
@@ -406,6 +420,19 @@ check "quitting exits non-zero"     "$([ "$INST_RC" -ne 0 ] && echo yes || echo 
 # a password: every look it takes is a file test, a glob or a read.
 check "detection needed no sudo"    "$([ -e "$TRIPWIRE" ] && cat "$TRIPWIRE" || echo none)" "none"
 check "detection changed nothing"   "$([ -e "$LD_DIR/com.ldev.caddy.plist" ] && echo kept || echo gone)" "kept"
+
+echo "--- installer: Remove it, from the menu, removes ldev and not the sites"
+plant_existing persite 0 1 0
+#   4 = "Remove it"; y = yes to the list it prints first.
+INST_KEEP=1 install_drive "4y"
+INST_KEEP=0
+check "finished (did not spin)"     "$INST_TIMEDOUT"                                       "0"
+check "it listed what it would remove" "$(saw_inst 'Remove ldev')"                         "yes"
+check "the config is gone"          "$([ -e "$INST_HOME/.config/ldev/config" ] && echo yes || echo no)" "no"
+check "it said so"                  "$(saw_inst 'ldev removed')"                           "yes"
+# The sites are the user's work. An uninstaller that took them with it would be worse than
+# the untidiness it exists to fix.
+check "the sites survived"          "$([ -e "$INST_HOME/Sites/shop.test/Caddyfile" ] && echo yes || echo no)" "yes"
 
 echo "--- installer: a run that would change the topology is not allowed to just proceed"
 # Interactive: the existing menu's "Update it in place", then the review screen switched to
@@ -575,7 +602,23 @@ check "the config is gone"           "$([ -e "$ROOT_HOME/.config/ldev/config" ] 
 check "bootout then enable on removal" "$(log_order 'launchctl bootout system/com.ldev.caddy' 'launchctl enable system/com.ldev.caddy')" "yes"
 check "it said the label was left enabled" "$(saw_root 'left enabled')" "yes"
 # A switch is the other half of the same promise: the old topology goes down as part of it.
+echo "--- installer: switching the other way unloads the agents and keeps the files"
+rm -rf "$ROOT_HOME" "$LD_DIR" "$LA_DIR"
+mkdir -p "$ROOT_HOME/Sites/shop.ldev" "$ROOT_HOME/.config/ldev" "$LD_DIR" "$LA_DIR"
+printf 'TLD=ldev\nSITES=%s/Sites\nMODE=persite\n' "$ROOT_HOME" > "$ROOT_HOME/.config/ldev/config"
+printf '{\n\tadmin localhost:2019\n}\n\nshop.ldev:8443 {\n\troot * /x\n}\n' > "$ROOT_HOME/Sites/shop.ldev/Caddyfile"
+printf '<plist>ldev shop</plist>\n' > "$LA_DIR/com.example.shop-ldev.plist"
+root_install --defaults --skip-dns --mode auto --switch
+check "the switch to auto finished"  "$ROOT_RC"                                            "0"
+check "it unloaded the LaunchAgent"  "$(grep -qF 'launchctl bootout gui/' "$ROOTLOG" && echo yes || echo no)" "yes"
+# --defaults answers yes to every question, so the only protection for files a person
+# wrote by hand is that the question is never asked when nobody is there to answer it.
+check "it kept the per-site Caddyfile" "$([ -e "$ROOT_HOME/Sites/shop.ldev/Caddyfile" ] && echo yes || echo no)" "yes"
+check "it said they were kept"       "$(saw_root 'still on disk')"                         "yes"
+check "the new mode was written"     "$(grep -c '^MODE=auto$' "$ROOT_HOME/.config/ldev/config")" "1"
+
 echo "--- installer: switching away takes the system service down first"
+rm -rf "$ROOT_HOME" "$LA_DIR"; mkdir -p "$ROOT_HOME/Sites" "$LA_DIR"
 root_install --defaults --skip-dns --mode auto
 root_install --defaults --skip-dns --mode persite --switch
 check "the switch finished"          "$ROOT_RC"                                            "0"

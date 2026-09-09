@@ -192,9 +192,13 @@ port_owner() { # port -> "caddy pid 42 (root)" or ""
 }
 
 # The ports a per-site Caddyfile claims: the address on a site block, and the admin port.
+# Finding none is an ordinary answer, so — as with port_owner above — the grep's exit 1
+# must not become this function's, or pipefail and set -e turn "this site names no port"
+# into a dead installer.
 site_ports_of() {
-  grep -oE '[A-Za-z0-9_.*-]+:[0-9]{2,5}[[:space:]]*\{' "$1" 2>/dev/null | grep -oE '[0-9]+' | head -2
-  grep -oE 'admin[[:space:]]+[A-Za-z0-9_.*-]*:[0-9]{2,5}' "$1" 2>/dev/null | grep -oE '[0-9]+$'
+  grep -oE '[A-Za-z0-9_.*-]+:[0-9]{2,5}[[:space:]]*\{' "$1" 2>/dev/null | grep -oE '[0-9]+' | head -2 || true
+  grep -oE 'admin[[:space:]]+[A-Za-z0-9_.*-]*:[0-9]{2,5}' "$1" 2>/dev/null | grep -oE '[0-9]+$' || true
+  return 0
 }
 
 detect_existing() {
@@ -380,23 +384,17 @@ takedown_system() {
     return 1
   fi
   ui_ok "system service stopped and $DAEMON_PLIST removed"
-  # launchd closes the socket a moment after the bootout returns, and "the port is free"
-  # is the only claim worth making here — the whole defect was believing a takedown that
-  # had not happened.
-  local p still=0
+  # launchd releases the socket a moment after bootout returns. ldev's own service is
+  # provably gone by now — the plist is — so a port still answering belongs to something
+  # else, and saying which is more use than refusing to continue over it.
+  local p
   for p in 80 443; do
     port_busy "$p" || continue
     sleep 1
-    if port_busy "$p"; then
-      still=1
-      ui_warn "port $p is still held by $(port_owner "$p" || true)"
-    fi
+    port_busy "$p" || continue
+    ui_warn "port $p is still answering — that is not ldev's service, it is something else."
+    ui_cmd "sudo lsof -nP -iTCP:$p -sTCP:LISTEN"
   done
-  if [ "$still" = 1 ]; then
-    ui_hint "something outside ldev owns it; stop that first:"
-    ui_cmd "sudo lsof -nP -iTCP:443 -sTCP:LISTEN"
-    return 1
-  fi
   EX_DAEMON=0; EX_SYS_LIVE=0
   return 0
 }
@@ -426,7 +424,9 @@ takedown_persite() {
   if [ "$EX_PERSITE_N" -gt 0 ]; then
     ui_info "$EX_PERSITE_N per-site Caddyfile(s) are still on disk. They are yours; ldev"
     ui_hint "will not serve them any more, and leaves them alone unless you say otherwise."
-    if confirm "Delete the per-site Caddyfiles too?" "no"; then
+    # Deliberately not offered unattended. `--defaults` means yes to everything, and the
+    # one thing a switch must never do on nobody's say-so is delete files a person wrote.
+    if [ "$TUI_INTERACTIVE" = 1 ] && confirm "Delete the per-site Caddyfiles too?" "no"; then
       for f in "${EX_PERSITE[@]}"; do rm -f "$f" && ui_ok "removed $f"; done
       EX_PERSITE_N=0; EX_PERSITE=()
     else
@@ -459,10 +459,14 @@ do_uninstall() {
     sudo rm -f "$DAEMON_PLIST" >/dev/null 2>&1 || ui_warn "could not remove $DAEMON_PLIST"
     ui_ok "$DAEMON_LABEL stopped, removed, and left enabled for next time"
   fi
-  rm -f "$AUTO_CADDYFILE" "$CONFIG_FILE"
+  # Report what was actually there. `rm -f` succeeds on a file that never existed, so
+  # reporting from its exit status would claim removals that never happened.
+  local gone
+  for gone in "$AUTO_CADDYFILE" "$CONFIG_FILE" "$dnsd/$tld.conf"; do
+    [ -e "$gone" ] || continue
+    rm -f "$gone" && ui_ok "removed $gone"
+  done
   rmdir "$HOME/.config/ldev" 2>/dev/null || true
-  ui_ok "removed $AUTO_CADDYFILE and $CONFIG_FILE"
-  rm -f "$dnsd/$tld.conf" && ui_ok "removed $dnsd/$tld.conf"
   if [ -f "/etc/resolver/$tld" ]; then
     if confirm "Remove /etc/resolver/$tld? (sudo)" "yes"; then
       sudo rm -f "/etc/resolver/$tld" && ui_ok "removed /etc/resolver/$tld"
@@ -483,6 +487,9 @@ do_uninstall() {
 # What this run should do about what is already here. The menu is the review screen's
 # style, and — like the review screen — choosing nothing writes nothing.
 choose_existing_action() {
+  # A flag is an answer already given, terminal or not: --uninstall must not be met with a
+  # menu whose default is "update in place".
+  if [ "$DO_UNINSTALL" = 1 ]; then EXISTING_ACTION="uninstall"; return 0; fi
   if [ "$TUI_INTERACTIVE" != 1 ]; then
     # Nobody is at the keyboard. Reinstalling in place is safe and is what a repeated
     # `./install.sh --defaults` means; anything that would change the serving topology
@@ -493,7 +500,11 @@ choose_existing_action() {
     fi
     return 0
   fi
-  menu_select "There is an ldev installation here already. What should this run do?" 0 \
+  # --switch on the command line preselects the switch, and still shows the menu: the
+  # user asked for it, so it is the default rather than the only option.
+  local d=0
+  [ "$DO_SWITCH" = 1 ] && d=1
+  menu_select "There is an ldev installation here already. What should this run do?" "$d" \
     "$G_ROCKET Update it in place" \
 "Keep serving sites the way this machine already serves them.
 Regenerates what ldev writes and restarts it." \
@@ -684,12 +695,12 @@ show_summary() {
   ui_kv "Dashboard" "$DASHBOARD"
   [ "$EX_FOUND" = 1 ] && ui_kv "Existing"  "$EXISTING_ACTION"
   if [ "$EX_FOUND" = 1 ] && topology_conflict; then
-    printf '\n %s%sWhat this will take down first%s\n\n' "$C_B" "" "$C_R"
+    printf '\n %s%sWhat is in the way, and has to go down first%s\n\n' "$C_B" "" "$C_R"
     if [ "$MODE" = "auto" ]; then
-      [ "${#EX_AGENTS[@]}" -gt 0 ] && ui_item "${#EX_AGENTS[@]} per-user LaunchAgent(s), unloaded"
+      [ "${#EX_AGENTS[@]}" -gt 0 ] && ui_item "${#EX_AGENTS[@]} per-user LaunchAgent(s), to be unloaded"
       [ "$EX_PERSITE_N" -gt 0 ] && ui_item "$EX_PERSITE_N per-site Caddyfile(s) stop being served (kept unless you say otherwise)"
     else
-      ui_item "$DAEMON_LABEL, stopped and removed  ${C_DIM}(root)$C_R"
+      ui_item "$DAEMON_LABEL, to be stopped and removed  ${C_DIM}(root)$C_R"
     fi
   fi
   printf '\n %s%sWhat this will write%s\n\n' "$C_B" "" "$C_R"
@@ -742,7 +753,7 @@ topology_guard() {
 
   local other
   if [ "$MODE" = "auto" ]; then
-    other="per-site servers"
+    other="a per-site setup"
   else
     other="the system Caddy service ($DAEMON_LABEL)"
   fi
