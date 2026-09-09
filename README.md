@@ -68,8 +68,23 @@ cd ldev
 ./install.sh
 ```
 
-The installer asks four things — **TLD**, **sites directory**, **serving mode**, and
-whether to make the root-owned changes for you — then does the rest.
+The installer is a small terminal UI: **↑↓** to move, **enter** to choose, **1-9** to jump
+straight to an option, **esc** to back out. Each choice explains itself as you highlight it.
+
+It runs in seven steps, and writes nothing until you say go:
+
+1. **What is already here** — before asking anything, it looks at what is actually
+   installed and running: an existing config, the system LaunchDaemon, per-site
+   Caddyfiles, LaunchAgents, and what holds ports 80 and 443. If it finds a previous
+   install, it says so and offers to update it in place, switch, repair, or remove it.
+2. **Configuration** — TLD, sites directory, and serving mode, each as a menu or a
+   validated prompt, ending in a **review screen** listing every setting and every path
+   about to be written, root-owned ones marked. You can go back into any answer from
+   there, or quit without a byte being written.
+3. **Dependencies** — offers to `brew install` whatever is missing.
+4. **DNS**, 5. **Certificates**, 6. **Server configuration**, 7. **Done** — each
+   announcing any root-owned change before making it, and printing the commands to run
+   by hand if you decline.
 
 Non-interactive:
 
@@ -78,6 +93,11 @@ Non-interactive:
 ./install.sh --defaults
 ```
 
+With no terminal — a pipe, a script, `--plain`, or `NO_COLOR` — the menus, colour and
+emoji fall away and every question takes the same answer it would have shown you. Optional
+root-owned steps then **fail closed**: they are skipped, with the commands printed, unless
+you passed `--yes` or `--defaults`.
+
 | Flag | Effect |
 |---|---|
 | `--tld <name>` | The TLD, one label, no dot. Default `ldev`. |
@@ -85,6 +105,9 @@ Non-interactive:
 | `--mode auto\|persite` | Serving mode; see below. Default `auto`. |
 | `--php-fpm <host:port>` | PHP-FPM address. Default `127.0.0.1:9000`. |
 | `--skip-dns` | Leave `/etc/resolver` and dnsmasq alone. |
+| `--switch` | Take an existing, incompatible setup down first. |
+| `--uninstall` | Remove what ldev installed, then stop. |
+| `--plain` | No menus, colour or emoji. Same as `NO_COLOR=1`. |
 | `--yes`, `-y` | Answer yes to every confirmation. |
 | `--defaults` | Accept every default and prompt for nothing. |
 
@@ -307,6 +330,7 @@ fixes whatever failed. The common ones:
 | 🤖 A headless browser loads nothing | It refuses custom TLDs | Use `http://<name>.localhost/` |
 | 🔤 A folder never appears | Its name cannot be a hostname — a space, or another character a `Host:` header cannot carry | `ldev list` counts these; rename them |
 | 🧱 A per-site server "does not start" | Two sites sharing an admin port — the second exits silently | [docs/persite.md](docs/persite.md) |
+| 🕳️ Every URL returns `000`, nothing in any log | Two topologies live at once: a mode was switched without the old one being taken down, so one process holds 80 and another holds 443, and whatever holds 443 has no site for that host | `./install.sh --switch`, or `./install.sh` and pick "switch" |
 
 Logs are in `~/Library/Logs/ldev/`.
 
@@ -340,18 +364,40 @@ Plain bash, no framework. Each script sets up a throwaway tree, asserts, and cle
 bash test/auto-root.test.sh      # hostname → folder, both layouts, on a real Caddy
 bash test/persite-new.test.sh    # ldev new writes a valid, non-colliding site config
 bash test/persite-ports.test.sh  # the site/admin port allocator
+bash test/tui-menu.test.sh       # the installer's menus and its whole question phase
 ```
 
 They skip gracefully when `caddy` is not on the `PATH`, or when a port they need is busy.
+
+`tui-menu.test.sh` drives the installer with a file of keystrokes in place of a keyboard,
+so the arrow keys, the review screen and the abort paths are all exercised without a
+terminal. Every run of `install.sh` inside it is pointed at a throwaway `HOME` and empty
+stand-ins for the launchd directories, and `sudo`, `brew`, `launchctl`, `caddy`, `mkcert`
+and `npm` are shadowed by stubs that record any attempt to a tripwire file — so "it needed
+no sudo" is asserted rather than assumed. It runs under `/bin/bash`, which on macOS is
+3.2, because the installer has to work before you have installed anything else.
 
 ---
 
 ## 🧹 Uninstall
 
-The reverse of the table above, in order:
+```sh
+./install.sh --uninstall
+```
+
+That removes what ldev installed — booting out the LaunchDaemon and any per-site
+LaunchAgents, deleting the plist, the resolver file, the dnsmasq conf and
+`~/.config/ldev` — and stops, without installing anything. It leaves the launchd label
+*enabled*, because launchd keeps a per-label disabled record that survives both `bootout`
+and deleting the plist, and a later reinstall would then fail with
+`Bootstrap failed: 5: Input/output error`, which mentions neither the label nor the word
+"disabled".
+
+By hand, the reverse of the table above, in order:
 
 ```sh
 sudo launchctl bootout system/com.ldev.caddy
+sudo launchctl enable system/com.ldev.caddy   # or the next install fails, opaquely
 sudo rm -f /Library/LaunchDaemons/com.ldev.caddy.plist
 sudo rm -f /etc/resolver/ldev
 rm -f "$(brew --prefix)/etc/dnsmasq.d/ldev.conf"
