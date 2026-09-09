@@ -88,6 +88,11 @@ http://127.0.0.1:__ASK_PORT__ {
 #
 # {labels.1} is the label left of "localhost": matsu.localhost -> matsu.
 http://*.localhost {
+	# Loopback only. Nothing here asks for a trusted certificate, so without this any
+	# machine on the LAN could send `Host: <name>.localhost` to port 80 and get a site
+	# root — with the directory listing below to browse it by.
+	bind 127.0.0.1 ::1
+
 	root * __SITES__/{labels.1}.__TLD__
 
 	encode gzip
@@ -113,6 +118,7 @@ http://*.localhost {
 
 # Bare http://localhost is the dashboard too.
 http://localhost {
+	bind 127.0.0.1 ::1
 	root * __DASHBOARD__
 	encode gzip
 	php_fastcgi __PHP_FPM__
