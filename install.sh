@@ -969,11 +969,14 @@ ui_step "$G_LOCK" "Certificates"
 if [ "$MODE" = "auto" ]; then
   # Caddy's internal CA issues per-host certs on demand; mkcert's CA is still
   # installed so anything issued by hand is trusted too.
+  # Deferred on purpose — see TRUST_CA below. The CA cannot be fetched from a server
+  # that has not started yet, so only the permission is taken here.
   ui_info "Mode 'auto' issues a certificate per host from Caddy's own CA."
+  ui_hint "Trusting it happens after the service starts, since the CA comes from it."
   if confirm "Trust Caddy's local CA in the system store? (sudo, once)" "yes"; then
-    if caddy trust; then ui_ok "Caddy's root CA is trusted"
-    else ui_warn "caddy trust failed — sites will load but show a warning."; fi
+    TRUST_CA=1
   else
+    TRUST_CA=0
     ui_skip "untrusted CA — browsers will warn on every ldev site"
   fi
 else
@@ -1010,6 +1013,75 @@ ui_step "$G_GEAR" "Server configuration ($MODE)"
 
 CADDY_BIN="$(command -v caddy || echo "$BREW_PREFIX/bin/caddy")"
 CADDYFILE="$HOME/.config/ldev/Caddyfile"
+
+# Pick ports nothing else has, instead of substituting the defaults and hoping.
+#
+# ADMIN_PORT defaulted to 2019 and went into the template verbatim. 2019 is also Caddy's
+# OWN default, so any other Caddy on the machine already has it — and a Caddy that cannot
+# bind its admin port exits at startup rather than warning. Under launchd's KeepAlive that
+# is a crash loop whose only symptom is "nothing is listening on 443", with a config that
+# `caddy validate` calls perfectly valid, because validation binds nothing. Observed
+# exactly that on a machine where 2019 belonged to a per-site Caddy.
+#
+# Claimed-but-stopped counts as taken: a site that is not running right now still owns its
+# ports, and allocating around only what is listening hands out a pair that collides the
+# moment it starts again. This is the reasoning bin/ldev's persite allocator already uses;
+# it is duplicated rather than shared because bin/ldev is being rewritten elsewhere.
+# Trust OUR Caddy's CA — named explicitly, and only once it exists.
+#
+# `caddy trust` fetches the root from a Caddy admin API and defaults to localhost:2019.
+# With no --address, on a machine where 2019 belongs to a different Caddy, it installs
+# THAT server's root and reports success. Observed exactly that: the log said
+# "certificate installed properly in macOS keychain" while the daemon's own root stayed
+# untrusted, and because both roots carry the CN "Caddy Local Authority" the keychain
+# showed two identical-looking entries with the wrong one trusted. The symptom is easy to
+# misread — every host answers under `curl -k`, and plain `curl` returns 000 with "unable
+# to get local issuer certificate". The chain was never the problem; the trusted root was.
+#
+# It also has to run AFTER the daemon is up: before that there is nothing to fetch from.
+trust_our_ca() {
+  [ "${TRUST_CA:-0}" = 1 ] || return 0
+  if caddy trust --address "localhost:$ADMIN_PORT"; then
+    ui_ok "trusted the CA belonging to this ldev daemon (admin $ADMIN_PORT)"
+  else
+    ui_warn "caddy trust failed — ldev sites will load but show a certificate warning."
+    ui_cmd "caddy trust --address localhost:$ADMIN_PORT"
+  fi
+}
+
+claimed_ports() {
+  local f
+  for f in "$SITES"/*/Caddyfile; do
+    [ -f "$f" ] || continue
+    site_ports_of "$f"
+  done
+}
+
+next_free_port() { # next_free_port <start> <claimed-list> -> the first port nobody has
+  local p="$1" claimed="$2" n=0
+  while [ "$n" -lt 200 ]; do
+    if ! printf '%s\n' "$claimed" | grep -qx "$p" && ! port_busy "$p"; then
+      printf '%s' "$p"; return 0
+    fi
+    p=$((p + 1)); n=$((n + 1))
+  done
+  printf '%s' "$1"                      # gave up: keep the default and let the check below say so
+}
+
+if [ "$MODE" = "auto" ]; then
+  _claimed="$(claimed_ports)"
+  _admin="$(next_free_port "$ADMIN_PORT" "$_claimed")"
+  _ask="$(next_free_port "$ASK_PORT" "$_claimed")"
+  [ "$_ask" = "$_admin" ] && _ask="$(next_free_port "$((_admin + 1))" "$_claimed")"
+  if [ "$_admin" != "$ADMIN_PORT" ]; then
+    ui_info "admin port $ADMIN_PORT is taken — using $_admin"
+    ADMIN_PORT="$_admin"
+  fi
+  if [ "$_ask" != "$ASK_PORT" ]; then
+    ui_info "ask port $ASK_PORT is taken — using $_ask"
+    ASK_PORT="$_ask"
+  fi
+fi
 
 render() {
   sed -e "s|__TLD__|$TLD|g" \
@@ -1067,6 +1139,7 @@ case "$MODE" in
           done
           if [ "$serving" = 1 ]; then
             ui_ok "service started and listening"
+            trust_our_ca
           else
             ui_warn "$DAEMON_LABEL was accepted by launchd but nothing is listening on 80 or 443."
             ui_hint "Caddy most likely started and exited. The usual cause is its admin port"
