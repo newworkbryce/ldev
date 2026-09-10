@@ -1,0 +1,169 @@
+{
+  "version": "0.1.0",
+  "id": "e3b6239c-66e6-4659-b3f7-9cc1e234173a",
+  "timestamp": "2026-09-10T02:16:16Z",
+  "vcs": {
+    "type": "git",
+    "revision": "f6723e2ee9a1b99674200e7fc0192bdd75dd7a69"
+  },
+  "tool": {
+    "name": "triaj",
+    "version": "1.3.1"
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/3e8f56a2-7837-42a5-adfb-4e072f3876ee",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 71,
+              "end_line": 72,
+              "content_hash": "sha256:13473b75d691eaca3b384a41564b5aecd2df5b0ac866b51679da7ef6c8a465b5",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 90,
+              "end_line": 117,
+              "content_hash": "sha256:732ea7811ffbcdd743fb1a4dbef7d379e6d6e37a42da653d92ef96298ca6cc1c",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 364,
+              "end_line": 364,
+              "content_hash": "sha256:1ed8dd20d36b599f715a3dcb98feba45651e85d32b486fa6596659b55a5f812d",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 392,
+              "end_line": 392,
+              "content_hash": "sha256:e61105c16d41de6942f6d9be7b291e73600bdb25b4c8954de2789b4ce3f4190a",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 410,
+              "end_line": 410,
+              "content_hash": "sha256:2f16e6169d71aa65074b51461698f29f6364d460b3c1e505ed8a51778df6c333",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "bin/ldev",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/3e8f56a2-7837-42a5-adfb-4e072f3876ee",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 72,
+              "end_line": 81,
+              "content_hash": "sha256:5cdc3630a59fbb1daa4c860baf993211d545d6463d2aef8977548df6a13c3873",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 99,
+              "end_line": 110,
+              "content_hash": "sha256:1975d1be23daffd026c82d21e7e513a213eb8d9d0df49cf0c8872ff7c73635f5",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "install.sh",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/3e8f56a2-7837-42a5-adfb-4e072f3876ee",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 254,
+              "end_line": 449,
+              "content_hash": "sha256:badb46e278987009e5ca9dc5e4c95e3c8108e26f4d40a60898dd91995b18dda4",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 479,
+              "end_line": 483,
+              "content_hash": "sha256:e0df244eb6dd207a26601d6e0c84d5e4888e2b10ddff7fccb9819929567ff63e",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "test/existing-install.test.sh",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/3e8f56a2-7837-42a5-adfb-4e072f3876ee",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 1,
+              "end_line": 103,
+              "content_hash": "sha256:0d25d0c1c91ed89dcc911c23080213497f8e773175e62a2b71761040661bfe6f",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "triaj": {
+      "task": "Take down the installation being replaced, and stop believing an open socket",
+      "status": "Waiting",
+      "agent": "claude-code",
+      "attribution_granularity": "commit"
+    }
+  }
+}
