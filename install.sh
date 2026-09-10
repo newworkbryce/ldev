@@ -6,6 +6,7 @@
 #   ./install.sh --defaults      accept every default, prompt for nothing
 #   ./install.sh --tld test --sites ~/Code --yes
 #   ./install.sh --skip-dns      leave /etc/resolver and dnsmasq alone
+#   ./install.sh --proxy-fallback yes   serve a proxied site's build when it is offline
 #
 # Everything it writes is listed at the end, and every root-owned change is
 # announced before it happens.
@@ -24,6 +25,7 @@ PHP_FPM="127.0.0.1:9000"
 ADMIN_PORT="2019"           # the wildcard server's own admin API
 SITE_PORT_BASE="8443"       # base of the run a standalone site's port is taken from
 ASK_PORT="2018"
+PROXY_FALLBACK=""             # yes | no — serve a proxied site's build when it is offline
 LOGDIR="$HOME/Library/Logs/ldev"
 ASSUME_YES=0
 USE_DEFAULTS=0
@@ -82,6 +84,7 @@ while [ $# -gt 0 ]; do
     --mode)     die "--mode is gone: ldev now has a single serving mode. A site that needs its own server gets one with 'ldev standalone <name>', fronted by the wildcard server." ;;
     --php-fpm)  PHP_FPM="${2:?--php-fpm needs a value}"; shift 2 ;;
     --yes|-y)   ASSUME_YES=1; shift ;;
+    --proxy-fallback) PROXY_FALLBACK="${2:?--proxy-fallback needs yes or no}"; shift 2 ;;
     --skip-dns) SKIP_DNS=1; shift ;;
     --defaults) USE_DEFAULTS=1; ASSUME_YES=1; shift ;;
     -h|--help)  sed -n '3,$p' "$0" | sed -n '/^#/!q; s/^# \{0,1\}//p'; exit 0 ;;
@@ -114,12 +117,44 @@ case "$TLD" in
     ;;
 esac
 
+# A proxied site — `ldev proxy <name> <port>` — points at a dev server the developer starts
+# and stops all day. The question is what to serve when it is NOT running.
+#
+# Neither answer is obviously right, which is why it is asked rather than assumed. Serving
+# the last build keeps the URL working, and shows something arbitrarily stale while looking
+# perfectly alive. Serving the proxy error is honest and tells you the server is down, which
+# is occasionally exactly what you needed to know.
+if [ -z "$PROXY_FALLBACK" ]; then
+  if [ "$USE_DEFAULTS" = 1 ]; then
+    PROXY_FALLBACK="no"
+  else
+    cat <<EOF
+
+When a proxied site's server is not running, ldev can either say so or serve that
+site's last build instead.
+
+  ${B}no${R}   show the proxy error. You always know the server is down.
+  ${B}yes${R}  serve the build. The URL keeps working, and can be silently stale.
+
+EOF
+    case "$(ask "Serve the build when a proxied site is offline? (yes/no)" "no")" in
+      y|yes|Y|YES) PROXY_FALLBACK="yes" ;;
+      *)           PROXY_FALLBACK="no" ;;
+    esac
+  fi
+fi
+case "$PROXY_FALLBACK" in
+  yes|no) ;;
+  *) die "--proxy-fallback must be yes or no — got '$PROXY_FALLBACK'." ;;
+esac
+
 DASHBOARD="$REPO_DIR/dashboard/dist"
 
 say ""
 say "  TLD          .$TLD"
 say "  Sites        $SITES"
 say "  PHP-FPM      $PHP_FPM"
+say "  Proxy fallback  $PROXY_FALLBACK  (serve a proxied site's build when it is offline)"
 say "  Dashboard    $DASHBOARD"
 say ""
 confirm "Proceed with these settings?" || die "aborted."
@@ -135,6 +170,8 @@ if [ -f "$CONFIG_FILE" ]; then
   [ -n "$prev" ] && ASK_PORT="$prev"
   prev="$(sed -n 's/^SITE_PORT_BASE=//p' "$CONFIG_FILE" | head -1)"
   [ -n "$prev" ] && SITE_PORT_BASE="$prev"
+  prev="$(sed -n 's/^PROXY_FALLBACK=//p' "$CONFIG_FILE" | head -1)"
+  [ -n "$prev" ] && [ -z "$PROXY_FALLBACK" ] && PROXY_FALLBACK="$prev"
 fi
 
 # ---------------------------------------------------------------- 2. dependencies
@@ -280,14 +317,29 @@ port_busy() { nc -z 127.0.0.1 "$1" 2>/dev/null; }
 # the check was called com.bryce.caddy-matsu — nothing in that name says ldev, or caddy's
 # role, or which TLD it serves, and a filename convention is not something an installer
 # gets to assume about a file somebody else wrote.
+# The config file a job runs, or empty.
+job_config() {
+  grep -oE '<string>[^<]*(Caddyfile|\.conf)[^<]*</string>' "$1" 2>/dev/null \
+    | sed -E 's|</?string>||g' | head -1
+}
+
 ldev_launchd_jobs() {
-  local f
+  local f cfg
   for f in /Library/LaunchDaemons/*.plist "$HOME/Library/LaunchAgents"/*.plist; do
     [ -f "$f" ] || continue
     grep -qi "caddy" "$f" 2>/dev/null || continue
+
+    # The plist names paths; whether those paths serve THIS TLD is usually only visible
+    # inside the config they point at. A Homebrew caddy service, for instance, says nothing
+    # but /opt/homebrew/etc/Caddyfile — and that file turned out to hold the whole front
+    # door for this TLD. Judging the job by its plist alone missed the one process actually
+    # sitting on 80 and 443.
+    cfg="$(job_config "$f")"
+
     if grep -qF "$HOME/.config/ldev" "$f" 2>/dev/null \
     || grep -qF "$SITES" "$f" 2>/dev/null \
-    || grep -qF ".$TLD" "$f" 2>/dev/null; then
+    || grep -qF ".$TLD" "$f" 2>/dev/null \
+    || { [ -n "$cfg" ] && [ -f "$cfg" ] && grep -qE "[a-z0-9-]+\.$TLD" "$cfg" 2>/dev/null; }; then
       printf '%s\n' "$f"
     fi
   done
@@ -308,9 +360,7 @@ plist_label() {
 # no port means 443, `http://` means 80, and anything else names its port outright.
 job_wants_privileged_port() {
   local plist="$1" cfg="" line addr
-  # The config path is whichever ProgramArguments entry looks like a Caddyfile.
-  cfg="$(grep -oE '<string>[^<]*Caddyfile[^<]*</string>' "$plist" 2>/dev/null \
-        | sed -E 's|</?string>||g' | head -1)" || true
+  cfg="$(job_config "$plist")" || true
   [ -n "$cfg" ] && [ -f "$cfg" ] || return 1   # cannot tell — treat as not in the way
 
   # Real address lines only: not comments, and ending in the `{` that opens a site block.
@@ -478,6 +528,7 @@ DASHBOARD=$DASHBOARD
 ADMIN_PORT=$ADMIN_PORT
 SITE_PORT_BASE=$SITE_PORT_BASE
 ASK_PORT=$ASK_PORT
+PROXY_FALLBACK=$PROXY_FALLBACK
 LOGDIR=$LOGDIR
 REPO_DIR=$REPO_DIR
 EOF

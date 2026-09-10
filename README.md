@@ -68,8 +68,10 @@ cd ldev
 ./install.sh
 ```
 
-The installer asks three things — **TLD**, **sites directory**, and whether to make the
-root-owned changes for you — then does the rest. There is no serving mode to choose.
+The installer asks four things — **TLD**, **sites directory**, what a
+[proxied site](#a-site-that-is-already-running-somewhere) should do when its server is down,
+and whether to make the root-owned changes for you — then does the rest. There is no serving
+mode to choose.
 
 Non-interactive:
 
@@ -83,6 +85,7 @@ Non-interactive:
 | `--tld <name>` | The TLD, one label, no dot. Default `ldev`. |
 | `--sites <dir>` | Where your site folders live. Default `~/Sites`. |
 | `--php-fpm <host:port>` | PHP-FPM address. Default `127.0.0.1:9000`. |
+| `--proxy-fallback yes\|no` | Serve a proxied site's last build when its server is down. Asked if omitted. |
 | `--skip-dns` | Leave `/etc/resolver` and dnsmasq alone. |
 | `--yes`, `-y` | Answer yes to every confirmation. |
 | `--defaults` | Accept every default and prompt for nothing. |
@@ -209,6 +212,7 @@ ldev doctor      # check each layer separately and say which one is broken
 ldev list        # sites found under the sites directory, and their type
 ldev new <name>  # create a site directory, live immediately
 ldev standalone <name>  # give one site its own server, fronted by the wildcard one
+ldev proxy <name> <port>  # serve a site from a dev server already running on that port
 ldev rehome <name>      # move a WordPress site onto its portless URL
 ldev render      # re-render the server config, without restarting
 ldev apply       # re-render the server config and restart
@@ -233,9 +237,41 @@ One Caddy owns 80 and 443 for the whole TLD. Sites resolve by directory name, ce
 are issued per host on first request, and an unknown host falls back to the dashboard.
 There is nothing to choose at install time.
 
-A site sometimes needs what that shared server cannot express — its own PHP version, its
-own certificate, a proxy to an app already running, or restarts that leave its neighbours
-alone. That site runs its own Caddy on a high port and is **fronted** by the wildcard one:
+### A site that is already running somewhere
+
+A dev server is not a directory, so the wildcard server cannot find it on disk. Point a
+hostname at it instead:
+
+```sh
+ldev proxy triaj 5273
+ldev apply
+```
+
+`https://triaj.ldev` now proxies to `127.0.0.1:5273` — with a certificate, no port in the
+URL, and no second server to run. The port lives in `~/Sites/triaj/.ldev-proxy`, not in
+ldev's config, so the site owns it the same way a standalone site owns its Caddyfile.
+
+**What happens when that server is not running** is a choice made at install time, because
+neither answer is obviously right:
+
+| `PROXY_FALLBACK` | When the upstream is down |
+|---|---|
+| `no` (default) | The proxy error. You always know the server is down. |
+| `yes` | That site's last build, if `--fallback <dir>` named one. The URL keeps working, and can be silently stale. |
+
+```sh
+ldev proxy triaj 5273 --fallback ~/Projects/triaj/apps/web/dist
+```
+
+The fallback path is stored absolute, and is usually nowhere near `~/Sites` — build output
+lives with the project. Recording one while the setting is off is harmless: ldev says so
+rather than pretending it will be used.
+
+### When one site needs its own server
+
+A site sometimes needs what the shared server cannot express — its own PHP version, its own
+certificate, or restarts that leave its neighbours alone. That site runs its own Caddy on a
+high port and is **fronted** by the wildcard one:
 
 ```sh
 ldev standalone shop     # writes shop its own Caddyfile on a free port pair
@@ -335,6 +371,7 @@ that `ldev` sources on every run:
 | `SITES` | Directory holding your site folders |
 | `PHP_FPM` | PHP-FPM address, e.g. `127.0.0.1:9000` |
 | `DASHBOARD` | Path to the built dashboard |
+| `PROXY_FALLBACK` | `yes` or `no` — whether a proxied site serves its last build when its server is down |
 | `ADMIN_PORT`, `ASK_PORT` | The wildcard server's own admin API and on-demand-TLS ask endpoint. A re-install keeps whatever is recorded here rather than resetting to the defaults, and steps past either if something else already holds it |
 | `SITE_PORT_BASE` | First port handed to a site that runs its own server; admin ports start one above `ADMIN_PORT` |
 | `LOGDIR` | Where access logs are written |
@@ -409,6 +446,7 @@ bash test/rehome.test.sh         # what rehome refuses to do to your site data
 bash test/path-setup.test.sh     # the right startup file and syntax per shell
 bash test/existing-install.test.sh  # which launchd job is in the way, and which is fronted
 bash test/install-ports.test.sh  # a re-install keeps ports you moved, and skips busy ones
+bash test/proxy.test.sh          # a proxied site, live and with its server stopped
 ```
 
 They skip gracefully when `caddy` is not on the `PATH`, or when a port they need is busy.

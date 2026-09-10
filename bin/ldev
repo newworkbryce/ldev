@@ -6,6 +6,7 @@
 #   ldev list              sites discovered under the sites directory
 #   ldev new <name>        create a site directory — live immediately, no config
 #   ldev standalone <name> give one site its own server, fronted by the wildcard one
+#   ldev proxy <name> <port>  serve a site from a dev server already running on that port
 #   ldev rehome <name>     move a WordPress site onto its portless URL
 #   ldev render            re-render the server config, without restarting
 #   ldev apply             re-render the server config and restart
@@ -192,7 +193,8 @@ cmd_list() {
     # listing stays a list of things you can open.
     [ -n "$host" ] || { skipped=$((skipped + 1)); continue; }
     found=1
-    if   [ -f "$d/wp-config.php" ]; then kind="WordPress"
+    if   [ -f "$d/.ldev-proxy" ];   then kind="proxy :$(sed -n 's/^PORT=//p' "$d/.ldev-proxy" | head -1)"
+    elif [ -f "$d/wp-config.php" ]; then kind="WordPress"
     elif [ -f "$d/index.php" ];     then kind="PHP"
     elif [ -f "$d/index.html" ];    then kind="static"
     else                                 kind="${YEL}no index${R}"; fi
@@ -258,6 +260,32 @@ site_servers() {
     fi
 
     printf '%s %s %s\n' "$host" "$port" "$scheme"
+  done
+}
+
+# Sites that are a PROXY to something already running: "<hostname> <port> <fallback>",
+# one per line, with "-" for no fallback.
+#
+# A dev server is not a directory, so the wildcard server cannot find it by looking on disk.
+# The site directory carries a .ldev-proxy marker naming the port instead — a file rather
+# than an entry in ldev's config, for the same reason a standalone site's port lives in its
+# own Caddyfile: it belongs to the site, and a second copy elsewhere goes stale the first
+# time somebody changes one and not the other.
+proxy_sites() {
+  local d f name host port fallback
+  for d in "$SITES"/*; do
+    [ -d "$d" ] || continue
+    f="$d/.ldev-proxy"
+    [ -f "$f" ] || continue
+    name="$(basename "$d")"
+    host="$(site_host "$d")"
+    [ -n "$host" ] || continue
+    port="$(sed -n 's/^PORT=//p' "$f" | head -1)"
+    case "$port" in
+      ''|*[!0-9]*) echo "ldev: $f has no usable PORT — skipping $host" >&2; continue ;;
+    esac
+    fallback="$(sed -n 's/^FALLBACK=//p' "$f" | head -1)"
+    printf '%s %s %s\n' "$host" "$port" "${fallback:--}"
   done
 }
 
@@ -372,6 +400,57 @@ EOF
   echo "        https://$name.$TLD/"
 }
 
+cmd_proxy() {
+  local name="${1:?usage: ldev proxy <name> <port> [--fallback <dir>]}"
+  local port="${2:?usage: ldev proxy <name> <port> [--fallback <dir>]}"
+  local fallback=""
+  [ "${3:-}" = "--fallback" ] && fallback="${4:?--fallback needs a directory}"
+  name="${name%.$TLD}"
+  require_site_name "$name"
+  case "$port" in
+    ''|*[!0-9]*) echo "ldev: '$port' is not a port" >&2; exit 1 ;;
+  esac
+
+  local dir; dir="$(site_dir "$name")"
+  if [ -z "$dir" ]; then
+    dir="$SITES/$name"
+    mkdir -p "$dir"
+    echo "created $dir"
+  fi
+
+  # An absolute fallback, resolved now. The build output of a proxied app is usually nowhere
+  # near $SITES — it lives with the project — and a relative path here would resolve against
+  # whatever directory the server happened to start in.
+  if [ -n "$fallback" ]; then
+    case "$fallback" in
+      /*) ;;
+      *)  fallback="$(cd "$(dirname "$fallback")" 2>/dev/null && pwd)/$(basename "$fallback")" ;;
+    esac
+    [ -d "$fallback" ] || echo "ldev: note — $fallback does not exist yet; it is used only when the upstream is down"
+  fi
+
+  {
+    echo "# ldev — written by \`ldev proxy $name $port\`."
+    echo "#"
+    echo "# This site is not files on disk: requests for https://$name.$TLD are proxied to"
+    echo "# 127.0.0.1:$port, wherever that is served from."
+    echo "PORT=$port"
+    [ -n "$fallback" ] && echo "FALLBACK=$fallback"
+  } > "$dir/.ldev-proxy"
+
+  echo "wrote $dir/.ldev-proxy (port $port)"
+  if [ -n "$fallback" ]; then
+    if [ "${PROXY_FALLBACK:-no}" = "yes" ]; then
+      echo "        offline fallback: $fallback"
+    else
+      echo "        offline fallback recorded, but this install has it turned OFF"
+      echo "        (PROXY_FALLBACK=no in $CONFIG_FILE)"
+    fi
+  fi
+  echo "        then: ldev apply"
+  echo "        reachable: https://$name.$TLD/"
+}
+
 cmd_standalone() {
   local name="${1:?usage: ldev standalone <name>}"
   name="${name%.$TLD}"
@@ -432,6 +511,35 @@ site_proxy_blocks() {
     printf '}\n\n'
   done <<EOF
 $(site_servers)
+EOF
+
+  # Proxy sites. The upstream is something the developer starts and stops all day, so the
+  # interesting case is not when it is up — it is what happens when it is not.
+  local fallback
+  while read -r host port fallback; do
+    [ -n "$host" ] || continue
+    printf '%s {\n' "$host"
+    printf '\tbind 127.0.0.1 ::1\n'
+    printf '\ttls {\n\t\ton_demand\n\t}\n'
+    printf '\treverse_proxy 127.0.0.1:%s\n' "$port"
+    # handle_errors catches the dial failure reverse_proxy raises when nothing is listening,
+    # which is a 502 with no response body to inspect — so this cannot be done with
+    # handle_response, which only sees replies the upstream actually sent.
+    #
+    # Serving the built files then means a stopped dev server shows the last build instead of
+    # a proxy error. That is a real trade rather than an obvious win: the page looks alive
+    # while being arbitrarily stale, which is its own kind of confusing. Hence the setting,
+    # chosen at install time rather than assumed.
+    if [ "${PROXY_FALLBACK:-no}" = "yes" ] && [ "$fallback" != "-" ]; then
+      printf '\thandle_errors {\n'
+      printf '\t\troot * %s\n' "$fallback"
+      printf '\t\ttry_files {path} /index.html\n'
+      printf '\t\tfile_server\n'
+      printf '\t}\n'
+    fi
+    printf '}\n\n'
+  done <<EOF
+$(proxy_sites)
 EOF
 }
 
@@ -576,6 +684,7 @@ case "${1:-doctor}" in
   list|ls) shift; cmd_list "$@" ;;
   new)     shift; cmd_new "$@" ;;
   standalone) shift; cmd_standalone "$@" ;;
+  proxy)   shift; cmd_proxy "$@" ;;
   rehome)  shift; cmd_rehome "$@" ;;
   render)  shift; cmd_render "$@" ;;
   apply)   shift; cmd_apply "$@" ;;
