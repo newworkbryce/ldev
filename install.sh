@@ -157,6 +157,8 @@ EX_PERSITE_N=0        # per-site Caddyfiles found
 EX_PERSITE_LIVE=0     # at least one per-site port is answering
 EX_PERSITE=()         # the first few of those Caddyfiles
 EX_AGENTS=()          # per-user LaunchAgents that mention ldev
+EX_FOREIGN=()         # root Caddy daemons that are NOT ours
+EX_TLD_ANSWERS=""     # what a request over the TLD actually returned, once asked
 EX_PORTS=""           # human-readable "port: who has it" lines
 EXISTING_ACTION="none"
 
@@ -191,6 +193,36 @@ port_owner() { # port -> "caddy pid 42 (root)" or ""
     | awk 'NR > 1 { printf "%s pid %s (%s)", $1, $2, $3; exit }' || true
 }
 
+# Does a request over this TLD actually get answered? -> EX_TLD_ANSWERS
+#
+# Read-only, and deliberately incurious about the answer: any HTTP status at all — 200,
+# 301, 404, 502 — means a server took the request, which is the whole question. A
+# hostname under a machine-local TLD resolving to 127.0.0.1 is not a network request.
+#
+# It asks over HTTP on purpose. The first version asked over HTTPS and reported a
+# healthy machine as dead: this Mac issues a mkcert certificate per host, has none for
+# a name that does not exist, and so failed the TLS handshake — which curl reports as
+# 000, indistinguishable from nothing listening. Over plain HTTP the same host answered
+# 200. Whose certificate it is has nothing to do with whether anything is serving, and
+# bringing TLS into the question only added a way to be wrong.
+#
+# "unknown" is a real answer and stays distinct from "dead": no curl, no resolver yet,
+# or the probe disabled. Saying "could not tell" beats guessing in either direction —
+# guessing is what this function exists to stop.
+tld_answers() {
+  EX_TLD_ANSWERS="unknown"
+  [ "${LDEV_SKIP_PORT_PROBE:-0}" = 1 ] && return 0
+  command -v curl >/dev/null 2>&1 || return 0
+  local code
+  code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 4 \
+            "http://ldev-install-probe.$TLD/" 2>/dev/null || true)"
+  case "$code" in
+    ''|000) EX_TLD_ANSWERS="dead" ;;
+    *)      EX_TLD_ANSWERS="answers" ;;
+  esac
+  return 0
+}
+
 # The ports a per-site Caddyfile claims: the address on a site block, and the admin port.
 # Finding none is an ordinary answer, so — as with port_owner above — the grep's exit 1
 # must not become this function's, or pipefail and set -e turn "this site names no port"
@@ -213,6 +245,24 @@ detect_existing() {
   [ -f "$AUTO_CADDYFILE" ] && EX_AUTO_FILE=1
   [ -f "$DAEMON_PLIST" ]   && EX_DAEMON=1
 
+  # Any OTHER root Caddy, not just ours.
+  #
+  # Looking only for com.ldev.caddy is how this missed the thing it was written to
+  # catch. On a real machine 80 and 443 were held by sh.brew.caddy (from `sudo brew
+  # services start caddy`) and com.bryce.caddy-matsu, a hand-written daemon. Because
+  # neither is our label, the report said "no system LaunchDaemon" while root plainly
+  # held both ports, and then offered to take down com.ldev.caddy — which did not
+  # exist. Accepting that would have removed nothing and added a second root Caddy
+  # fighting for 80/443: exactly the collision this section exists to prevent.
+  #
+  # So ask what a Caddy daemon looks like, not what ours is called.
+  for f in "$LAUNCHDAEMONS_DIR"/*.plist; do
+    [ -f "$f" ] || continue
+    [ "$f" = "$DAEMON_PLIST" ] && continue
+    grep -qs -e 'caddy' -e 'Caddy' "$f" || continue
+    EX_FOREIGN+=("$f")
+  done
+
   # Both the directory this run would use and the one the old config named: a switch of
   # sites directory must not hide the sites the old topology is still serving.
   dirs=("$SITES")
@@ -232,7 +282,8 @@ detect_existing() {
   done
 
   if [ "$EX_CONFIG" = 1 ] || [ "$EX_AUTO_FILE" = 1 ] || [ "$EX_DAEMON" = 1 ] \
-     || [ "$EX_PERSITE_N" -gt 0 ] || [ "${#EX_AGENTS[@]}" -gt 0 ]; then
+     || [ "$EX_PERSITE_N" -gt 0 ] || [ "${#EX_AGENTS[@]}" -gt 0 ] \
+     || [ "${#EX_FOREIGN[@]}" -gt 0 ]; then
     EX_FOUND=1
   else
     return 0                       # a clean machine: ask the machine nothing further
@@ -314,6 +365,11 @@ show_existing() {
   else
     ui_item "no system LaunchDaemon at $DAEMON_PLIST"
   fi
+  if [ "${#EX_FOREIGN[@]}" -gt 0 ]; then
+    ui_item "${#EX_FOREIGN[@]} other root Caddy daemon(s) — ${C_B}not installed by ldev${C_R}:"
+    local g
+    for g in "${EX_FOREIGN[@]}"; do ui_hint "$g"; done
+  fi
   [ "$EX_AUTO_FILE" = 1 ] && ui_item "$AUTO_CADDYFILE"
   if [ "$EX_PERSITE_N" -gt 0 ]; then
     ui_item "$EX_PERSITE_N per-site Caddyfile(s):"
@@ -334,12 +390,34 @@ show_existing() {
   else
     ui_item "nothing listening on 80 or 443"
   fi
-  # The exact state the reported defect left behind, called by name.
+  # The exact state the reported defect left behind — but asked, not assumed.
+  #
+  # This used to declare "https://<name>.$TLD returns 000" whenever both topologies
+  # were present. On a machine where they coexist correctly — a wildcard front door on
+  # 80/443 and per-site servers on 8443+, which is a documented arrangement, not an
+  # accident — that told the operator their working setup was broken. Structure does
+  # not prove the failure; a request does. So make one, and say what came back.
   if sys_installed && persite_installed; then
     printf '\n'
-    ui_warn "both ways of serving are installed at once."
-    ui_hint "One process holds 80 and another holds 443, so a site answers from"
-    ui_hint "neither — this is the state where https://<name>.$TLD returns 000."
+    tld_answers
+    case "$EX_TLD_ANSWERS" in
+      answers)
+        ui_info "both ways of serving are installed at once, and they are coexisting."
+        ui_hint "A request over .$TLD is answered, so whatever holds 443 does serve these"
+        ui_hint "hosts. Nothing here is broken; installing a second server on 80/443 would"
+        ui_hint "break it."
+        ;;
+      dead)
+        ui_warn "both ways of serving are installed at once, and nothing answers."
+        ui_hint "One process holds 80 and another holds 443, and a request over .$TLD came"
+        ui_hint "back with nothing — this is the state the two-topology collision produces."
+        ;;
+      *)
+        ui_warn "both ways of serving are installed at once."
+        ui_hint "Whether they collide could not be tested from here, so this is a warning"
+        ui_hint "rather than a diagnosis: a second server on 80/443 is the risk."
+        ;;
+    esac
   fi
   printf '\n'
 }
@@ -705,7 +783,21 @@ show_summary() {
       [ "${#EX_AGENTS[@]}" -gt 0 ] && ui_item "${#EX_AGENTS[@]} per-user LaunchAgent(s), to be unloaded"
       [ "$EX_PERSITE_N" -gt 0 ] && ui_item "$EX_PERSITE_N per-site Caddyfile(s) stop being served (kept unless you say otherwise)"
     else
-      ui_item "$DAEMON_LABEL, to be stopped and removed  ${C_DIM}(root)$C_R"
+      # Only claim to remove what is actually there. Listing our own label
+      # unconditionally is how this offered to take down com.ldev.caddy on a machine
+      # that had never had it, while the daemons really holding 80/443 went unmentioned.
+      if [ "$EX_DAEMON" = 1 ]; then
+        ui_item "$DAEMON_LABEL, to be stopped and removed  ${C_DIM}(root)$C_R"
+      fi
+      if [ "${#EX_FOREIGN[@]}" -gt 0 ]; then
+        ui_item "${C_B}not ours, and not touched${C_R} — take these down yourself if they conflict:"
+        local h
+        for h in "${EX_FOREIGN[@]}"; do ui_hint "$h"; done
+      fi
+      if [ "$EX_DAEMON" = 0 ] && [ "${#EX_FOREIGN[@]}" -eq 0 ] && [ "$EX_SYS_LIVE" = 1 ]; then
+        ui_item "something root-owned holds 80/443 that ldev did not install and cannot name"
+        ui_hint "sudo lsof -nP -iTCP:443 -sTCP:LISTEN"
+      fi
     fi
   fi
   printf '\n %s%sWhat this will write%s\n\n' "$C_B" "" "$C_R"

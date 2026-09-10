@@ -389,6 +389,24 @@ EOF
   return 0
 }
 
+echo "--- installer: a root Caddy that is not ours is seen and not claimed"
+# Looking only for com.ldev.caddy is how detection missed the daemons that actually held
+# 80 and 443 on a real Mac — sh.brew.caddy from `sudo brew services start caddy`, and a
+# hand-written one. It reported "no system LaunchDaemon" while root plainly held both
+# ports, then offered to take down com.ldev.caddy, which was not installed. Accepting
+# that would have removed nothing and added a second root Caddy fighting for the ports.
+plant_existing persite 0 1 0
+printf '<plist><string>/opt/homebrew/bin/caddy</string></plist>\n' > "$LD_DIR/sh.brew.caddy.plist"
+printf '<plist><string>/usr/bin/true</string></plist>\n'           > "$LD_DIR/com.other.thing.plist"
+foreign="$(HOME="$INST_HOME" PATH="$STUB:$PATH" LDEV_TTY=/dev/null \
+  "$SHELL_UNDER_TEST" "$REPO/install.sh" --skip-dns 2>&1 || true)"
+check "the foreign caddy daemon is listed" "$(saw_text "$foreign" 'sh.brew.caddy.plist')"      "yes"
+check "it is named as not ours"            "$(saw_text "$foreign" 'not installed by ldev')"    "yes"
+check "a non-caddy daemon is ignored"      "$(saw_text "$foreign" 'com.other.thing')"          "no"
+check "it does not offer to remove a daemon that is absent" \
+  "$(printf '%s' "$foreign" | grep -c 'com.ldev.caddy, to be stopped')" "0"
+rm -f "$LD_DIR/sh.brew.caddy.plist" "$LD_DIR/com.other.thing.plist"
+
 echo "--- installer: the real port probe runs only when there is an install to explain"
 # The rest of this section sets LDEV_SKIP_PORT_PROBE=1, so the probe never runs — and the
 # probe only runs at all once something has been found, which is why a probe-free run
