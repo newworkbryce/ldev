@@ -272,11 +272,12 @@ priv_attempts() {
   if [ -e "$TRIPWIRE" ]; then grep -cE '^(sudo|launchctl|brew) ' "$TRIPWIRE" || true; else echo 0; fi
 }
 
-# The sites menu offers ~/Sites then ~/Code, so DOWN+enter picks ~/Code; the
-# mode menu offers auto/persite, so DOWN+enter picks persite; "6" on the review
-# screen is "Quit without changing anything".
+# Every question is now a menu, so these are digits rather than typed words: "2" on the
+# TLD menu is .test, and a digit selects immediately. The sites menu offers ~/Sites then
+# ~/Code, so DOWN+enter picks ~/Code; the mode menu offers auto/persite, so DOWN+enter
+# picks persite; "6" on the review screen is "Quit without changing anything".
 echo "--- installer: quitting at the review screen writes nothing"
-install_drive "test$CR$DOWN$CR$DOWN${CR}6"
+install_drive "2$DOWN$CR$DOWN${CR}6"
 check "finished (did not spin)"        "$INST_TIMEDOUT"                          "0"
 check "quitting exits non-zero"        "$([ "$INST_RC" -ne 0 ] && echo yes || echo no)" "yes"
 check "said nothing was written"       "$(inst_text | grep -c 'nothing was written')"   "1"
@@ -294,8 +295,9 @@ check "review shows the mode"     "$(inst_text | grep -cE '^ +Mode +persite$')" 
 check "review shows the sites dir" "$(inst_text | grep -cE "^ +Sites +$INST_HOME/Code$")" "1"
 
 echo "--- installer: going back from the review to change the TLD"
-# enter takes ~/Sites and auto, "2" is "Change the TLD", then "demo", then quit.
-install_drive "test$CR$CR${CR}2demo${CR}6"
+# "2" picks .test on the TLD menu, enter takes ~/Sites and auto, "2" on the review is
+# "Change the TLD", "3" on the TLD menu is "Type a different one…", then "demo", then quit.
+install_drive "2$CR${CR}23demo${CR}6"
 check "finished (did not spin)"   "$INST_TIMEDOUT"                                      "0"
 check "two review screens"        "$(inst_text | grep -c 'Review')"                     "2"
 check "the first review had .test" "$(inst_text | grep -cE '^ +TLD +\.test$')"          "1"
@@ -306,9 +308,9 @@ check "still wrote nothing"       "$([ -e "$INST_HOME/.config/ldev" ] && echo ye
 check "still no sudo"             "$([ -e "$TRIPWIRE" ] && cat "$TRIPWIRE" || echo none)"      "none"
 
 echo "--- installer: input running out mid-question gives up instead of looping"
-# A rejected TLD with nothing left to type. The bug this covers printed the
-# rejection ~28,000 times in 25 seconds and never stopped.
-install_drive "not a tld!$CR"
+# A rejected TLD with nothing left to type — "3" opens the free-text branch first.
+# The bug this covers printed the rejection ~28,000 times in 25 seconds and never stopped.
+install_drive "3not a tld!$CR"
 check "finished (did not spin)"   "$INST_TIMEDOUT"                                      "0"
 check "gave up non-zero"          "$([ "$INST_RC" -ne 0 ] && echo yes || echo no)"      "yes"
 check "rejected the value once"   "$(inst_text | grep -c 'is not one label')"           "1"

@@ -95,10 +95,14 @@ _tui_palette() {
     C_B=$'\033[1m';  C_DIM=$'\033[2m'; C_R=$'\033[0m'
     C_GRN=$'\033[32m'; C_YEL=$'\033[33m'; C_RED=$'\033[31m'
     C_CYN=$'\033[36m'; C_MAG=$'\033[35m'; C_BLU=$'\033[34m'
+    # Reverse video for the "it is your turn" badge. A prompt has to be findable in a
+    # screen of install output — dim grey text after twenty lines of progress reads as
+    # more progress, and people sat waiting at a question they never saw was asked.
+    C_REV=$'\033[7m'
   else
     C_B=""; C_DIM=""; C_R=""
     C_GRN=""; C_YEL=""; C_RED=""
-    C_CYN=""; C_MAG=""; C_BLU=""
+    C_CYN=""; C_MAG=""; C_BLU=""; C_REV=""
   fi
 }
 
@@ -108,13 +112,13 @@ _tui_glyphs() {
     G_ARROW="❯"; G_DOT="·"; G_BULLET="•"; G_RULE="─"
     G_PARTY="🎉"; G_GEAR="⚙️"; G_NET="🌐"; G_LOCK="🔐"; G_FOLDER="📁"
     G_CHART="📊"; G_PKG="📦"; G_PENCIL="✏️ "; G_LIST="📋"; G_BOLT="⚡"
-    G_UP="↑"; G_DOWN="↓"; G_WRITE="📝"; G_ROCKET="🚀"
+    G_UP="↑"; G_DOWN="↓"; G_POINT="👉"; G_WRITE="📝"; G_ROCKET="🚀"
   else
     G_OK="[ok]"; G_NO="[no]"; G_WARN="[!]"; G_INFO="[i]"; G_SKIP="[-]"
     G_ARROW=">"; G_DOT="-"; G_BULLET="*"; G_RULE="-"
     G_PARTY="*"; G_GEAR="*"; G_NET="*"; G_LOCK="*"; G_FOLDER="*"
     G_CHART="*"; G_PKG="*"; G_PENCIL="*"; G_LIST="*"; G_BOLT="*"
-    G_UP="^"; G_DOWN="v"; G_WRITE="*"; G_ROCKET="*"
+    G_UP="^"; G_DOWN="v"; G_POINT=">>"; G_WRITE="*"; G_ROCKET="*"
   fi
 }
 
@@ -139,6 +143,16 @@ ui_item()  { printf '     %s%s%s %s\n' "$C_DIM" "$G_BULLET" "$C_R" "$*"; }
 ui_hint()  { printf '     %s%s%s\n' "$C_DIM" "$*" "$C_R"; }
 ui_wrote() { printf '  %s %swrote%s %s\n' "$G_WRITE" "$C_DIM" "$C_R" "$*"; }
 ui_cmd()   { printf '       %s%s%s\n' "$C_CYN" "$*" "$C_R"; }
+
+# The one thing on screen that says "stop reading, you are being asked something".
+#
+# Install output is a wall of progress lines, and a question styled like the rest of it
+# is not seen as a question — people sit waiting at a prompt they never noticed. So a
+# prompt gets a blank line above it, an emoji, and a reversed-video label: three signals
+# nothing else in this file uses.
+ui_badge() { # ui_badge <emoji> <label> <colour>
+  printf '\n %s %s%s %s %s\n' "$1" "${3:-$C_CYN}" "$C_REV" "$2" "$C_R"
+}
 
 ui_kv() { # ui_kv <label> <value>
   printf '     %s%-12s%s %s\n' "$C_DIM" "$1" "$C_R" "$2"
@@ -199,13 +213,16 @@ _tui_key() {
 _menu_draw() {
   local i line shown=0
   printf '\033[2K\n'
+  printf '\033[2K %s %s%s CHOOSE %s\n' "$G_POINT" "$C_CYN" "$C_REV" "$C_R"
   printf '\033[2K %s%s%s\n' "$C_B" "$_m_title" "$C_R"
   printf '\033[2K\n'
   for ((i = 0; i < _m_n; i++)); do
     if [ "$i" = "$_m_sel" ]; then
-      printf '\033[2K  %s%s%s %s%s%s\n' "$C_CYN" "$G_ARROW" "$C_R" "$C_B$C_CYN" "${_m_labels[$i]}" "$C_R"
+      # The selected row is reversed as well as arrowed: on a busy screen the arrow
+      # alone is a single character and easy to miss.
+      printf '\033[2K  %s%s%s %s%s %s %s\n' "$C_CYN$C_B" "$G_ARROW" "$C_R" "$C_CYN" "$C_REV" "${_m_labels[$i]}" "$C_R"
     else
-      printf '\033[2K    %s\n' "${_m_labels[$i]}"
+      printf '\033[2K    %s%s%s\n' "$C_DIM" "${_m_labels[$i]}" "$C_R"
     fi
   done
   if [ "$_m_desc_h" -gt 0 ]; then
@@ -325,9 +342,11 @@ tui_input() {
   local p="$1" d="$2" hint="${3:-}" reply=""
   TUI_VALUE="$d"
   [ "$TUI_INTERACTIVE" = 1 ] || return 0
-  printf '\n %s%s%s' "$C_B" "$p" "$C_R"
-  [ -n "$hint" ] && printf '  %s%s%s' "$C_DIM" "$hint" "$C_R"
-  printf '\n  %s%s%s %s[%s]%s ' "$C_CYN" "$G_ARROW" "$C_R" "$C_DIM" "$d" "$C_R"
+  ui_badge "$G_PENCIL" "TYPE AN ANSWER" "$C_MAG"
+  printf ' %s%s%s\n' "$C_B" "$p" "$C_R"
+  [ -n "$hint" ] && printf ' %s%s%s\n' "$C_DIM" "$hint" "$C_R"
+  printf ' %s%senter%s keeps %s%s%s\n' "$C_DIM" "$C_B" "$C_R$C_DIM" "$C_R$C_B" "$d" "$C_R"
+  printf '  %s%s%s ' "$C_MAG$C_B" "$G_ARROW" "$C_R"
   if ! IFS= read -r reply <&3 2>/dev/null; then
     # A last line with no trailing newline is still an answer: read reports
     # failure but has already filled `reply`. Only an empty read is EOF proper.

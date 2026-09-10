@@ -650,6 +650,23 @@ reserved_tld() {
 
 edit_tld() {
   local candidate
+
+  # Offer the usual answers as a menu before falling back to typing. Nearly everyone
+  # takes the default, and an arrow-key list is both faster and — the reason it is
+  # here — visibly a question, where a bare prompt line in a wall of install output
+  # is not.
+  if [ "$TUI_INTERACTIVE" = 1 ]; then
+    menu_select "Which local TLD?" 0 \
+      "$G_BOLT .$TLD" "the default $G_DOT sites at https://<name>.$TLD" \
+      "$G_BOLT .test" "reserved by the IETF for exactly this, so it can never clash" \
+      "$G_PENCIL Type a different one…" "any single label of a-z, 0-9 and dashes" \
+      || die "aborted."
+    case "$MENU_CHOICE" in
+      0) return 0 ;;
+      1) TLD="test"; return 0 ;;
+    esac
+  fi
+
   while :; do
     ask "Local TLD" "$TLD" "one label, no dot — sites will live at https://<name>.<tld>" \
       || die "aborted — end of input while asking for the TLD."
@@ -729,6 +746,32 @@ Choose this to preserve an existing per-site setup." \
 }
 
 edit_php() {
+  if [ "$TUI_INTERACTIVE" = 1 ]; then
+    local sock="" s
+    # Homebrew's php-fpm listens on 9000 by default, but a per-version install often
+    # has a socket instead. Offering one that exists beats asking someone to remember
+    # the path.
+    for s in "$BREW_PREFIX/var/run/php-fpm.sock" "$BREW_PREFIX/var/run/php/php-fpm.sock"; do
+      [ -S "$s" ] && { sock="$s"; break; }
+    done
+    if [ -n "$sock" ]; then
+      menu_select "How does PHP listen?" 0 \
+        "$G_GEAR 127.0.0.1:9000" "the Homebrew php-fpm default" \
+        "$G_GEAR $sock" "a socket that exists on this machine" \
+        "$G_PENCIL Type a different one…" "host:port, or a unix socket path" \
+        || die "aborted."
+      case "$MENU_CHOICE" in
+        0) PHP_FPM="127.0.0.1:9000"; return 0 ;;
+        1) PHP_FPM="$sock"; return 0 ;;
+      esac
+    else
+      menu_select "How does PHP listen?" 0 \
+        "$G_GEAR 127.0.0.1:9000" "the Homebrew php-fpm default" \
+        "$G_PENCIL Type a different one…" "host:port, or a unix socket path" \
+        || die "aborted."
+      [ "$MENU_CHOICE" = 0 ] && { PHP_FPM="127.0.0.1:9000"; return 0; }
+    fi
+  fi
   ask "PHP-FPM address" "$PHP_FPM" "host:port, or a unix socket path" \
     || die "aborted — end of input."
   PHP_FPM="$ANSWER"
