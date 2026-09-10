@@ -508,7 +508,7 @@ site_proxy_blocks() {
     [ -n "$host" ] || continue
     printf '%s {\n' "$host"
     printf '\tbind 127.0.0.1 ::1\n'
-    printf '\ttls {\n\t\ton_demand\n\t}\n'
+    printf '\ttls {\n\t\tissuer internal {\n\t\t\tca local\n\t\t}\n\t\ton_demand\n\t}\n'
     if [ "$scheme" = "http" ]; then
       printf '\treverse_proxy http://127.0.0.1:%s\n' "$port"
     else
@@ -534,7 +534,7 @@ EOF
     [ -n "$host" ] || continue
     printf '%s {\n' "$host"
     printf '\tbind 127.0.0.1 ::1\n'
-    printf '\ttls {\n\t\ton_demand\n\t}\n'
+    printf '\ttls {\n\t\tissuer internal {\n\t\t\tca local\n\t\t}\n\t\ton_demand\n\t}\n'
     printf '\treverse_proxy 127.0.0.1:%s\n' "$port"
     # handle_errors catches the dial failure reverse_proxy raises when nothing is listening,
     # which is a 502 with no response body to inspect — so this cannot be done with

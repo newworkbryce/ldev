@@ -328,7 +328,7 @@ command -v php     >/dev/null 2>&1 || need+=(php)
 
 if [ ${#need[@]} -gt 0 ]; then
   say "Missing: ${need[*]}"
-  if confirm "Install them with Homebrew now?"; then
+  if confirm "Install them with Homebrew now?" "yes"; then
     brew install "${need[@]}"
   else
     die "cannot continue without: ${need[*]}"
@@ -372,7 +372,7 @@ elif [ -f "/etc/resolver/$TLD" ] && pgrep -x dnsmasq >/dev/null 2>&1; then
 else
   say "Next step needs sudo: writing /etc/resolver/$TLD and starting dnsmasq as root."
   say "  (dnsmasq must run as root to bind port 53.)"
-  if confirm "Run these now?"; then
+  if confirm "Run these now?" "yes"; then
     sudo mkdir -p /etc/resolver
     printf 'nameserver 127.0.0.1\n' | sudo tee "/etc/resolver/$TLD" >/dev/null
     sudo brew services restart dnsmasq >/dev/null
@@ -727,7 +727,11 @@ render() {
 
 say ""
 say "Ports 80 and 443 are privileged, so Caddy needs to start via launchd as root."
-if confirm "Install and start the ldev launchd service?"; then
+# Defaulted to yes, unlike the other root-owned steps. Declining this one does not leave a
+# slightly smaller install — it leaves nothing serving, since 80 and 443 are the whole
+# product and only launchd can bind them as root. Enter at this prompt used to mean "no",
+# so a run that looked complete ended with no server at all.
+if confirm "Install and start the ldev launchd service?" "yes"; then
   PLIST="$DAEMON_PLIST"
   render "$REPO_DIR/templates/com.ldev.caddy.plist.tmpl" | sudo tee "$PLIST" >/dev/null
   sudo chown root:wheel "$PLIST"; sudo chmod 644 "$PLIST"

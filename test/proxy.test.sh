@@ -56,7 +56,21 @@ else
   # Serve the generated config on a spare port so the assertions run against real Caddy
   # behaviour rather than against the text of a config file.
   SERVE=21772
-  sed -e "s|^app\.ldev {|http://app.ldev:$SERVE {|" -e '/tls {/,/}/d' "$C" > "$TMP/serve.Caddyfile"
+  # Depth-counted, not "delete to the next closing brace". The tls block nests an
+  # `issuer internal { ... }`, so a /tls {/,/}/ range ends at the issuer's brace and
+  # leaves the rest of the block behind — the braces stop balancing and the reverse_proxy
+  # line below is then read as a site address.
+  sed -e "s|^app\.ldev {|http://app.ldev:$SERVE {|" "$C" \
+    | awk '
+        /^\ttls \{$/ { skip = 1; depth = 1; next }
+        skip {
+          n = gsub(/\{/, "{"); depth += n
+          n = gsub(/\}/, "}"); depth -= n
+          if (depth <= 0) skip = 0
+          next
+        }
+        { print }
+      ' > "$TMP/serve.Caddyfile"
   # Only the proxy block is wanted here; drop everything else so nothing fights for a port.
   awk '/^http:\/\/app\.ldev:'"$SERVE"' \{/{f=1} f{print} f&&/^}/{exit}' "$TMP/serve.Caddyfile" > "$TMP/only.Caddyfile"
   printf '{\n\tadmin off\n\tauto_https off\n}\n\n' | cat - "$TMP/only.Caddyfile" > "$TMP/live.Caddyfile"
