@@ -30,7 +30,7 @@ The TLD is a setting. `.ldev` is only the default — install it as `.test`, `.w
 - [🔧 Configuration](#-configuration)
 - [🩺 Troubleshooting](#-troubleshooting)
 - [📦 What it changes on your machine](#-what-it-changes-on-your-machine)
-- [⬆️ Updating](#️-updating)
+- [⬆️ Updating](#-updating)
 - [🧪 Tests](#-tests)
 - [🧹 Uninstall](#-uninstall)
 - [📄 License](#-license)
@@ -56,8 +56,11 @@ The TLD is a setting. `.ldev` is only the default — install it as `.test`, `.w
 - **[Homebrew](https://brew.sh)**.
 - `dnsmasq`, `caddy`, `mkcert`, `php`, and `node` (for the dashboard build) —
   **installed for you** if they are missing, after asking.
-- `sudo` for three things, each announced before it happens: the resolver file, the local
-  CA, and the launchd service. Every one of them can be declined and run by hand.
+- `sudo` for four things, each announced before it happens: the resolver file, the mkcert
+  root CA if you do not already have one, taking down a server already holding port 80 or
+  443, and the launchd service. Every one can be declined and run by hand.
+- One more prompt that needs no `sudo`: adding `bin/` to your `PATH`, which appends a line
+  to your shell's own startup file and shows you the line first.
 
 ---
 
@@ -174,7 +177,7 @@ mkdir ~/Sites/client-api  # →  https://client-api.ldev
 ldev new blog             # same thing, plus a starter index.html
 ```
 
-In `auto` mode the site is live immediately — the server resolves the folder per request,
+The site is live immediately — the server resolves the folder per request,
 so there is nothing to apply and nothing to restart.
 
 What lands where:
@@ -317,7 +320,7 @@ not exist. See [docs/standalone-sites.md](docs/standalone-sites.md).
 
 ## 🤖 Headless and automated browsers
 
-Every auto-mode site also answers over plain HTTP at **`http://<name>.localhost`**.
+Every site also answers over plain HTTP at **`http://<name>.localhost`**.
 
 Browsers resolve `*.localhost` to loopback themselves — no DNS entry, no certificate,
 nothing to trust. That matters because automated and preview browsers (Claude, Playwright
@@ -352,7 +355,7 @@ Four layers, each replaceable:
    half-set-up project tells you what exists instead of failing blankly.
 
 The generated config is `~/.config/ldev/Caddyfile`, rendered from
-[`templates/Caddyfile.auto.tmpl`](templates/Caddyfile.auto.tmpl) — which is commented at
+[`templates/Caddyfile.tmpl`](templates/Caddyfile.tmpl) — which is commented at
 length, and is the authoritative description of the routing.
 
 ---
@@ -406,7 +409,7 @@ Edit it, then apply:
 
 ```sh
 ldev config      # print it
-ldev apply       # re-render the Caddyfile and restart (auto mode)
+ldev apply       # re-render the Caddyfile and restart
 ```
 
 Changing `TLD` also needs the DNS side redone — the simplest route is to re-run
@@ -424,7 +427,7 @@ fixes whatever failed. The common ones:
 | 🌍 Name does not resolve at all | Resolver file or dnsmasq | `echo 'nameserver 127.0.0.1' \| sudo tee /etc/resolver/ldev` then `sudo brew services restart dnsmasq` |
 | 🔌 Resolves, then "connection refused" | Nothing on 443 — the service is not running | `sudo launchctl bootstrap system /Library/LaunchDaemons/com.ldev.caddy.plist` |
 | 🔐 `ERR_SSL_PROTOCOL_ERROR` on every site but one | Something other than ldev holds 443 and knows only that one host | `ldev doctor` names it; re-run `./install.sh` to take it down |
-| 🔒 Certificate warning in the browser | The local CA is not trusted | `caddy trust` |
+| 🔒 Certificate warning in the browser | The mkcert root that signs these certificates is not in the System keychain | `mkcert -install` |
 | 📄 Blank page on a PHP site | PHP-FPM is not listening | `brew services start php` |
 | 🧭 You get the dashboard instead of your site | The folder has no `index.php` or `index.html` — or a plain folder is shadowing a `.ldev` one | `ldev list` |
 | 🤖 A headless browser loads nothing | It refuses custom TLDs | Use `http://<name>.localhost/` |
@@ -453,7 +456,7 @@ instead.
 | `~/Library/Logs/ldev/` | you | access logs |
 | `/Library/LaunchDaemons/com.ldev.caddy.plist` | root | starts Caddy on 80/443 at boot |
 | another launchd job holding 80/443 | root or you | **removed**, only if you accept the prompt — see [Replacing an existing setup](#replacing-an-existing-setup) |
-| system trust store | root | trusts the local CA, once |
+| system trust store | root | mkcert's root CA, once — and only if you did not already have one |
 | your shell's startup file | you | one `PATH` line — only if you accept the prompt |
 
 Nothing is written anywhere else.
@@ -531,8 +534,11 @@ sudo rm -f /etc/resolver/ldev
 rm -f "$(brew --prefix)/etc/dnsmasq.d/ldev.conf"
 sudo brew services restart dnsmasq
 rm -rf ~/.config/ldev ~/Library/Logs/ldev   # config and the generated Caddyfile
-caddy untrust                    # optional: remove the local CA from the trust store
 ```
+
+The mkcert root CA is deliberately **not** in that list. ldev signs with it but does not own
+it — it is shared with every other tool that uses mkcert, so removing it here would break
+those too. If you are certain nothing else needs it: `mkcert -uninstall`.
 
 Then remove the two lines `install.sh` appended: the `conf-dir` line in
 `$(brew --prefix)/etc/dnsmasq.conf`, and — if you accepted the PATH prompt — the `# ldev`
