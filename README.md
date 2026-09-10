@@ -30,6 +30,7 @@ The TLD is a setting. `.ldev` is only the default — install it as `.test`, `.w
 - [🔧 Configuration](#-configuration)
 - [🩺 Troubleshooting](#-troubleshooting)
 - [📦 What it changes on your machine](#-what-it-changes-on-your-machine)
+- [⬆️ Updating](#️-updating)
 - [🧪 Tests](#-tests)
 - [🧹 Uninstall](#-uninstall)
 - [📄 License](#-license)
@@ -214,6 +215,7 @@ ldev new <name>  # create a site directory, live immediately
 ldev standalone <name>  # give one site its own server, fronted by the wildcard one
 ldev proxy <name> <port>  # serve a site from a dev server already running on that port
 ldev rehome <name>      # move a WordPress site onto its portless URL
+ldev update      # migrate an older config to this version, then re-render
 ldev render      # re-render the server config, without restarting
 ldev apply       # re-render the server config and restart
 ldev restart     # restart the server
@@ -447,9 +449,37 @@ bash test/path-setup.test.sh     # the right startup file and syntax per shell
 bash test/existing-install.test.sh  # which launchd job is in the way, and which is fronted
 bash test/install-ports.test.sh  # a re-install keeps ports you moved, and skips busy ones
 bash test/proxy.test.sh          # a proxied site, live and with its server stopped
+bash test/update.test.sh         # migrating an older config without reinstalling
 ```
 
 They skip gracefully when `caddy` is not on the `PATH`, or when a port they need is busy.
+
+---
+
+## ⬆️ Updating
+
+Pulling a new ldev can leave the config behind: a release adds a key, every use site has a
+default behind it, and the machine keeps working while nobody is ever asked about the choice
+that key represents. `ldev doctor` reports that, and one command fixes it:
+
+```sh
+git pull
+ldev update
+```
+
+It adds keys this version expects, removes ones it no longer understands, and **leaves
+values you set alone** — a hand-tuned `ADMIN_PORT` is the reason a migration exists rather
+than a reinstall. The previous file is saved as `config.bak-<timestamp>` first, and running
+it twice does nothing the second time.
+
+It then re-renders the server config and restarts. Two things it reports rather than does,
+because both are root-owned:
+
+- the launchd plist differing from this version's template
+- no daemon being installed at all
+
+Both are `./install.sh`, which is still the right tool for a change that needs `sudo`.
+`ldev update` is for the far commoner case where nothing privileged has to happen.
 
 ---
 
