@@ -4,8 +4,8 @@
 #
 #   ./install.sh                 interactive
 #   ./install.sh --defaults      accept every default, prompt for nothing
-#   ./install.sh --tld test --sites ~/Code --mode auto --yes
-#   ./install.sh --mode persite --skip-dns   leave /etc/resolver and dnsmasq alone
+#   ./install.sh --tld test --sites ~/Code --yes
+#   ./install.sh --skip-dns      leave /etc/resolver and dnsmasq alone
 #
 # Everything it writes is listed at the end, and every root-owned change is
 # announced before it happens.
@@ -19,11 +19,10 @@ CONFIG_FILE="$HOME/.config/ldev/config"
 # Defaults. Every one of these is overridable by flag or prompt.
 TLD="ldev"
 SITES="$HOME/Sites"
-MODE=""                       # auto | persite
 SKIP_DNS=0                    # --skip-dns: leave /etc/resolver and dnsmasq alone
 PHP_FPM="127.0.0.1:9000"
-ADMIN_PORT="2019"           # persite: base of the admin-port run (2019, 2020, ...)
-SITE_PORT_BASE="8443"       # persite: base of the site-port run (8443, 8444, ...)
+ADMIN_PORT="2019"           # the wildcard server's own admin API
+SITE_PORT_BASE="8443"       # base of the run a standalone site's port is taken from
 ASK_PORT="2018"
 LOGDIR="$HOME/Library/Logs/ldev"
 ASSUME_YES=0
@@ -77,12 +76,15 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --tld)      TLD="${2:?--tld needs a value}"; shift 2 ;;
     --sites)    SITES="${2:?--sites needs a value}"; shift 2 ;;
-    --mode)     MODE="${2:?--mode needs a value}"; shift 2 ;;
+    # There is one serving mode now, so this flag has no answer to accept. Failing loudly
+    # beats ignoring it: a script passing `--mode persite` was asking for an install with
+    # nothing on 80/443, and silently giving it the opposite is worse than stopping.
+    --mode)     die "--mode is gone: ldev now has a single serving mode. A site that needs its own server gets one with 'ldev standalone <name>', fronted by the wildcard server." ;;
     --php-fpm)  PHP_FPM="${2:?--php-fpm needs a value}"; shift 2 ;;
     --yes|-y)   ASSUME_YES=1; shift ;;
     --skip-dns) SKIP_DNS=1; shift ;;
     --defaults) USE_DEFAULTS=1; ASSUME_YES=1; shift ;;
-    -h|--help)  sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help)  sed -n '3,$p' "$0" | sed -n '/^#/!q; s/^# \{0,1\}//p'; exit 0 ;;
     *)          die "unknown option: $1 (try --help)" ;;
   esac
 done
@@ -112,41 +114,11 @@ case "$TLD" in
     ;;
 esac
 
-if [ -z "$MODE" ]; then
-  cat <<EOF
-
-How should sites be served?
-
-  ${B}1) auto${R}     One Caddy owns ports 80 and 443 for *.${TLD}.
-              A directory at ${SITES}/<name> is served at
-              https://<name>.${TLD} with a certificate issued on first
-              request. Unknown names fall back to the dashboard.
-              ${DIM}Adding a site = creating a folder. Recommended.${R}
-
-  ${B}2) persite${R}  One Caddy per site on its own high port (8443, 8444, ...).
-              Nothing owns 443. Each site needs its own Caddyfile and
-              certificate. ${DIM}Choose this to preserve an existing per-site setup.${R}
-
-EOF
-  case "$(ask "Mode (1/2)" "1")" in
-    1|auto)    MODE="auto" ;;
-    2|persite) MODE="persite" ;;
-    *) die "pick 1 or 2." ;;
-  esac
-fi
-
-# 'apache' was a third mode here and is not one any more: serving the TLD from httpd
-# needs a vhost and a certificate per host, which is a different product from "a folder
-# is a site". Refusing by name beats accepting a mode nothing downstream implements —
-# `ldev apply` would have had nothing to render and doctor nothing to check.
-[ "$MODE" = "apache" ] && die "mode 'apache' is not supported — use 'auto', or 'persite' to keep an existing per-site setup."
-
 DASHBOARD="$REPO_DIR/dashboard/dist"
 
 say ""
 say "  TLD          .$TLD"
 say "  Sites        $SITES"
-say "  Mode         $MODE"
 say "  PHP-FPM      $PHP_FPM"
 say "  Dashboard    $DASHBOARD"
 say ""
@@ -158,11 +130,13 @@ step "Dependencies"
 
 command -v brew >/dev/null 2>&1 || die "Homebrew is required: https://brew.sh"
 
+# mkcert is no longer among these. It was here for the per-site mode, where every site
+# needed a certificate of its own; the wildcard server issues one per host from Caddy's
+# internal CA on first request, so nothing in a default install calls mkcert at all.
 need=()
 command -v dnsmasq >/dev/null 2>&1 || need+=(dnsmasq)
-command -v mkcert  >/dev/null 2>&1 || need+=(mkcert)
-command -v caddy >/dev/null 2>&1 || need+=(caddy)
-command -v php >/dev/null 2>&1 || need+=(php)
+command -v caddy   >/dev/null 2>&1 || need+=(caddy)
+command -v php     >/dev/null 2>&1 || need+=(php)
 
 if [ ${#need[@]} -gt 0 ]; then
   say "Missing: ${need[*]}"
@@ -230,17 +204,12 @@ fi
 
 step "Certificates"
 
-if [ "$MODE" = "auto" ]; then
-  # Caddy's internal CA issues per-host certs on demand; mkcert's CA is still
-  # installed so anything issued by hand is trusted too.
-  say "Mode 'auto' issues a certificate per host from Caddy's own CA."
-  say "Trusting Caddy's root (needs sudo, once):"
-  if confirm "Install Caddy's local CA into the system trust store?"; then
-    caddy trust || warn "caddy trust failed — sites will load but show a warning."
-  fi
-else
-  say "Installing the mkcert root CA (needs sudo, once):"
-  confirm "Run mkcert -install?" && mkcert -install || true
+# One certificate per host, issued from Caddy's own CA the first time that host is asked
+# for. Trusting the CA once is what makes every future site work with no certificate step.
+say "Each host gets its own certificate from Caddy's local CA, issued on first request."
+say "Trusting that CA (needs sudo, once):"
+if confirm "Install Caddy's local CA into the system trust store?"; then
+  caddy trust || warn "caddy trust failed — sites will load but show a warning."
 fi
 
 # ---------------------------------------------------------------- 5. dashboard
@@ -258,12 +227,31 @@ else
   warn "no dashboard/ directory in this repo — the fallback will 404."
 fi
 
-# ---------------------------------------------------------------- 6. server config
+# ---------------------------------------------------------------- 6. save the config
 
-step "Server configuration ($MODE)"
-
+# Written BEFORE the server config, because `ldev render` reads it. That ordering is also
+# what makes a half-finished run recoverable: the config file is the thing every later step
+# and every later `ldev` command depends on, so it should survive a failure further down.
 CADDY_BIN="$(command -v caddy || echo "$BREW_PREFIX/bin/caddy")"
 CADDYFILE="$HOME/.config/ldev/Caddyfile"
+
+cat > "$CONFIG_FILE" <<EOF
+# ldev — written by install.sh on $(date '+%Y-%m-%d %H:%M:%S')
+TLD=$TLD
+SITES=$SITES
+PHP_FPM=$PHP_FPM
+DASHBOARD=$DASHBOARD
+ADMIN_PORT=$ADMIN_PORT
+SITE_PORT_BASE=$SITE_PORT_BASE
+ASK_PORT=$ASK_PORT
+LOGDIR=$LOGDIR
+REPO_DIR=$REPO_DIR
+EOF
+say "wrote $CONFIG_FILE"
+
+# ---------------------------------------------------------------- 7. server config
+
+step "Server configuration"
 
 render() {
   sed -e "s|__TLD__|$TLD|g" \
@@ -279,66 +267,111 @@ render() {
       "$1"
 }
 
-case "$MODE" in
-  auto)
-    OUT="$HOME/.config/ldev/Caddyfile"
-    render "$REPO_DIR/templates/Caddyfile.auto.tmpl" > "$OUT"
-    say "wrote $OUT"
-    caddy validate --config "$OUT" >/dev/null 2>&1 \
-      && say "config validates" \
-      || warn "caddy could not validate the generated config — see: caddy validate --config $OUT"
+# `ldev render` rather than a render() call here, because the wildcard Caddyfile is not a
+# straight substitution any more: it carries a generated proxy block for every site that
+# runs its own server, and that generator lives in bin/ldev. Rendering it twice, in two
+# languages, is how the two would drift.
+"$REPO_DIR/bin/ldev" render || die "could not render $CADDYFILE"
 
-    say ""
-    say "Ports 80 and 443 are privileged, so Caddy needs to start via launchd as root."
-    if confirm "Install and start the ldev launchd service?"; then
-      PLIST=/Library/LaunchDaemons/com.ldev.caddy.plist
-      render "$REPO_DIR/templates/com.ldev.caddy.plist.tmpl" | sudo tee "$PLIST" >/dev/null
-      sudo chown root:wheel "$PLIST"; sudo chmod 644 "$PLIST"
-      sudo launchctl bootout system/com.ldev.caddy 2>/dev/null || true
-      sudo launchctl bootstrap system "$PLIST"
-      say "service started."
-    else
-      say ""
-      say "${YEL}Start it yourself with:${R}"
-      say "  sudo caddy run --config $OUT"
-    fi
-    ;;
-  persite)
-    say "Per-site mode makes no global change."
-    say "Each site gets its own Caddyfile and its own pair of ports:"
-    say "  ldev new <name>   writes it, allocating site $SITE_PORT_BASE+n and admin $ADMIN_PORT+n"
-    say "Both ports must be unique per site — two Caddy processes cannot share an"
-    say "admin port, and the second one exits at startup instead of warning."
-    say "See docs/persite.md."
-    ;;
-esac
+say ""
+say "Ports 80 and 443 are privileged, so Caddy needs to start via launchd as root."
+if confirm "Install and start the ldev launchd service?"; then
+  PLIST=/Library/LaunchDaemons/com.ldev.caddy.plist
+  render "$REPO_DIR/templates/com.ldev.caddy.plist.tmpl" | sudo tee "$PLIST" >/dev/null
+  sudo chown root:wheel "$PLIST"; sudo chmod 644 "$PLIST"
+  sudo launchctl bootout system/com.ldev.caddy 2>/dev/null || true
+  sudo launchctl bootstrap system "$PLIST"
+  say "service started."
+else
+  say ""
+  say "${YEL}Nothing will answer on 80 or 443 until it runs. Start it yourself with:${R}"
+  say "  sudo caddy run --config $CADDYFILE"
+fi
 
-# ---------------------------------------------------------------- 7. save + report
+# ---------------------------------------------------------------- 8. PATH
 
-cat > "$CONFIG_FILE" <<EOF
-# ldev — written by install.sh on $(date '+%Y-%m-%d %H:%M:%S')
-TLD=$TLD
-SITES=$SITES
-MODE=$MODE
-PHP_FPM=$PHP_FPM
-DASHBOARD=$DASHBOARD
-ADMIN_PORT=$ADMIN_PORT
-SITE_PORT_BASE=$SITE_PORT_BASE
-ASK_PORT=$ASK_PORT
-LOGDIR=$LOGDIR
-REPO_DIR=$REPO_DIR
-EOF
+step "PATH"
+
+# Which file, and which SYNTAX, depends on the shell, and guessing is worse than not
+# offering: a line appended to ~/.zshrc does nothing for a bash or fish user, who is then
+# told their PATH is set while their shell still cannot find ldev. Only shells whose
+# startup file and export syntax are known get an offer; anything else is printed for the
+# reader to place, because they know where their own config lives and this script does not.
+#
+# $SHELL is the LOGIN shell — what a new terminal window starts — which is the right
+# question here. The shell currently running this script is bash either way.
+shell_rc() {
+  case "${SHELL##*/}" in
+    zsh)  printf '%s' "$HOME/.zshrc" ;;
+    # macOS Terminal opens LOGIN shells, and a login bash reads .bash_profile and pointedly
+    # does NOT read .bashrc. Writing to .bashrc is the classic way to make this silently
+    # not work on a Mac.
+    bash) if [ -f "$HOME/.bash_profile" ]; then printf '%s' "$HOME/.bash_profile"
+          else printf '%s' "$HOME/.profile"; fi ;;
+    fish) printf '%s' "$HOME/.config/fish/config.fish" ;;
+    ksh)  printf '%s' "$HOME/.kshrc" ;;
+    *)    printf '' ;;
+  esac
+}
+
+# fish is not POSIX and `export PATH="...:$PATH"` is a syntax error in it. fish_add_path is
+# also idempotent, so re-running the installer cannot stack duplicates the way the export
+# line would.
+path_line() {
+  case "${SHELL##*/}" in
+    fish) printf 'fish_add_path %s' "$REPO_DIR/bin" ;;
+    *)    printf 'export PATH="%s:$PATH"' "$REPO_DIR/bin" ;;
+  esac
+}
+
+RC="$(shell_rc)"
+LINE="$(path_line)"
+FOUND="$(command -v ldev 2>/dev/null || true)"
+
+if [ "$FOUND" = "$REPO_DIR/bin/ldev" ]; then
+  say "Already on your PATH — ldev resolves to $FOUND."
+elif [ -n "$FOUND" ]; then
+  # A different checkout wins the name. Adding ours would not change that, since the
+  # existing entry comes first, so say which one answers rather than appearing to fix it.
+  warn "'ldev' already resolves to $FOUND, which is not this checkout."
+  say  "This one is $REPO_DIR/bin/ldev — call it by full path, or reorder your PATH."
+elif [ -z "$RC" ]; then
+  say "Shell '${SHELL##*/}' is not one this script knows how to edit."
+  say "Add $REPO_DIR/bin to your PATH in its startup file:"
+  say "  $LINE"
+elif [ -f "$RC" ] && grep -qF "$REPO_DIR/bin" "$RC"; then
+  say "$RC already adds it. Open a new terminal, or: source $RC"
+else
+  say "ldev lives in $REPO_DIR/bin, which is not on your PATH."
+  say "This would append to $RC:"
+  say ""
+  say "  $LINE"
+  say ""
+  if confirm "Add it?"; then
+    mkdir -p "$(dirname "$RC")"        # fish's config directory may not exist yet
+    printf '\n# ldev\n%s\n' "$LINE" >> "$RC"
+    say "added to $RC — run 'source $RC', or open a new terminal."
+  else
+    say "${YEL}Add it yourself:${R}"
+    say "  echo '$LINE' >> $RC"
+  fi
+fi
+
+# ---------------------------------------------------------------- 9. report
 
 step "Done"
 cat <<EOF
 
   Config      $CONFIG_FILE
-  Dashboard   http://$TLD/
-  A new site  mkdir $SITES/<name>   ->  https://<name>.$TLD
-              (folders already named <name>.$TLD keep working too)
+  Dashboard   https://$TLD/          (and any name with no directory behind it)
+  A new site  mkdir $SITES/<name>    ->  https://<name>.$TLD
+              the .$TLD suffix on the directory is optional; both are served
+
+  Its own server, for a site that needs one — a different PHP version, its own
+  certificate, a proxy to a running app, restarts that leave the others alone:
+              $REPO_DIR/bin/ldev standalone <name>
 
   Check it:   $REPO_DIR/bin/ldev doctor
-  Add bin to your PATH:
-    echo 'export PATH="$REPO_DIR/bin:\$PATH"' >> ~/.zshrc
+              (or just 'ldev doctor', if the PATH step above added it)
 
 EOF

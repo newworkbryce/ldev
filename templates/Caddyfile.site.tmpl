@@ -1,0 +1,63 @@
+# ldev — written by `ldev standalone __NAME__`. Unlike the wildcard Caddyfile, this one is
+# yours: a site gets its own server precisely so it can diverge, and `ldev apply` never
+# rewrites it. Apply only READS the address line below, to learn where to send traffic.
+#
+#   https://__NAME__.__TLD__   ->   the wildcard server on 443   ->   here, on __SITE_PORT__
+#
+# You are behind a front door, not beside it. The wildcard server owns 80 and 443, matches
+# __NAME__.__TLD__ to this port, and proxies to it. That is why this file is plain HTTP with
+# no certificate and no redirect: TLS is terminated out front, one host at a time, by a
+# server that already holds a certificate for this name. Serving HTTPS here as well would
+# mean a second certificate for the same hostname, issued for a port nobody browses to.
+#
+# It also means the URL has no port in it. The port below is an implementation detail of
+# this site, not something you or anyone else types — which is the whole difference between
+# this and the per-site MODE it replaces, where the port WAS the address and there was no
+# front door at all, so an unknown hostname reached nothing.
+#
+# Reach it directly at http://127.0.0.1:__SITE_PORT__ when you need to know whether a fault
+# is this site's or the proxy's. Nothing else should.
+
+# Caddy allows exactly ONE keyless block and it must come FIRST, so keep everything global
+# in here. A second one further down is a hard error — "server block without any key is
+# global configuration, and if used, it must be first" — and takes the site down.
+{
+	# Caddy binds its admin API at startup and two processes CANNOT share it. The second
+	# does not warn or fall back, it exits — so a site that inherits another's admin port is
+	# simply never up, and the symptom is a missing site rather than an error saying why.
+	#
+	# `ldev standalone` allocates this in step with the site port, skipping every port a
+	# sibling already claims AND the one the wildcard server holds. If you hand-write one of
+	# these, pick a number nobody else uses — or set `admin off`, which is the honest answer
+	# whenever this site never needs the API.
+	admin localhost:__ADMIN_PORT__
+}
+
+http://__NAME__.__TLD__:__SITE_PORT__, http://127.0.0.1:__SITE_PORT__ {
+	# Loopback only. Caddy binds every interface by default, and there is no certificate in
+	# front of THIS listener to slow anyone down — without this line the site is served in
+	# the clear to the whole network. The wildcard server reaches it over loopback, so
+	# nothing legitimate is lost.
+	#
+	# It only works because __SITE_PORT__ is >= 1024: on macOS an unprivileged process cannot
+	# bind a SPECIFIC address on a privileged port, only the wildcard. Caddy aborts the whole
+	# config on one bad listener, so moving this below 1024 takes the site down over a
+	# permission error naming a port you did not think you set.
+	bind 127.0.0.1 ::1
+
+	# Absolute, not `root * .`. A relative root resolves against the process's working
+	# directory — whatever launchd or your shell happened to set — and the failure mode is a
+	# server that starts cleanly and serves the wrong tree.
+	root * __SITE_DIR__
+
+	encode gzip
+	php_fastcgi __PHP_FPM__
+	file_server
+
+	log {
+		output file __LOGDIR__/__NAME__.access.log {
+			roll_size 10MiB
+			roll_keep 3
+		}
+	}
+}

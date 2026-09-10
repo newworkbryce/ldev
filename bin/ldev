@@ -2,13 +2,16 @@
 #
 # ldev — manage the local development TLD.
 #
-#   ldev doctor      check every layer separately and say which one is broken
-#   ldev list        sites discovered under the sites directory
-#   ldev new <name>  create a site directory (and an index.html if empty)
-#   ldev apply       re-render the server config from the template
-#   ldev restart     restart the server
-#   ldev status      is it running, and on what
-#   ldev config      print the saved configuration
+#   ldev doctor            check every layer separately and say which one is broken
+#   ldev list              sites discovered under the sites directory
+#   ldev new <name>        create a site directory — live immediately, no config
+#   ldev standalone <name> give one site its own server, fronted by the wildcard one
+#   ldev rehome <name>     move a WordPress site onto its portless URL
+#   ldev render            re-render the server config, without restarting
+#   ldev apply             re-render the server config and restart
+#   ldev restart           restart the server
+#   ldev status            is it running, and on what
+#   ldev config            print the saved configuration
 
 set -uo pipefail
 
@@ -33,7 +36,7 @@ fix()  { printf '      %s%s%s\n' "$DIM" "$*" "$R"; }
 
 cmd_doctor() {
   FAILED=0
-  printf '\n%sldev doctor%s  — TLD .%s, mode %s\n\n' "$B" "$R" "$TLD" "$MODE"
+  printf '\n%sldev doctor%s  — TLD .%s\n\n' "$B" "$R" "$TLD"
 
   # Each layer is checked on its own, because they fail independently and a
   # working layer above a broken one is exactly what makes this confusing:
@@ -51,16 +54,19 @@ cmd_doctor() {
   fi
 
   printf '\n%sListeners%s\n' "$B" "$R"
+  # Both ports are required now, unconditionally. This used to be excused whenever MODE was
+  # not 'auto' — the note read "mode 'persite' does not use it" and the section still passed.
+  # That was true and useless: nothing listening on 443 is exactly why an unknown hostname
+  # reached nothing, so the check explained the symptom away instead of reporting it.
   local any=0
   for p in 80 443; do
     if nc -z 127.0.0.1 "$p" 2>/dev/null; then ok "port $p is listening"; any=1
-    else
-      if [ "$MODE" = "auto" ]; then bad "port $p is not listening"
-      else note "port $p is not listening (mode '$MODE' does not use it)"; fi
-    fi
+    else bad "port $p is not listening"; fi
   done
-  if [ "$MODE" = "auto" ] && [ "$any" = 0 ]; then
+  if [ "$any" = 0 ]; then
     fix "start the service — sudo launchctl bootstrap system /Library/LaunchDaemons/com.ldev.caddy.plist"
+    # An install predating the single-mode change has no daemon to start at all.
+    [ "${MODE:-}" = "" ] || fix "this install still records MODE=$MODE — re-run ./install.sh to migrate it"
   fi
 
   printf '\n%sPHP%s\n' "$B" "$R"
@@ -72,22 +78,20 @@ cmd_doctor() {
   fi
 
   printf '\n%sConfig%s\n' "$B" "$R"
-  if [ "$MODE" = "auto" ]; then
-    if [ -f "$CADDYFILE" ]; then
-      if caddy validate --config "$CADDYFILE" >/dev/null 2>&1; then ok "Caddyfile validates"
-      else bad "Caddyfile is invalid"; fix "caddy validate --config $CADDYFILE"; fi
-    else
-      bad "no Caddyfile at $CADDYFILE"; fix "ldev apply"
-    fi
+  if [ -f "$CADDYFILE" ]; then
+    if caddy validate --config "$CADDYFILE" >/dev/null 2>&1; then ok "Caddyfile validates"
+    else bad "Caddyfile is invalid"; fix "caddy validate --config $CADDYFILE"; fi
+  else
+    bad "no Caddyfile at $CADDYFILE"; fix "ldev apply"
   fi
   [ -d "$SITES" ] && ok "sites directory $SITES" || bad "missing sites directory $SITES"
 
   # `shop` and `shop.$TLD` are one hostname with two folders, and the plain one wins.
   # Editing the shadowed folder and seeing nothing change is a long hour, so name it here.
-  local d base
-  for d in "$SITES"/*."$TLD"; do
-    [ -d "$d" ] || continue
-    base="$(basename "$d")"
+  local sd base
+  for sd in "$SITES"/*."$TLD"; do
+    [ -d "$sd" ] || continue
+    base="$(basename "$sd")"
     [ -d "$SITES/${base%.$TLD}" ] \
       && note "$base and ${base%.$TLD} are one hostname — https://$base/ serves ${base%.$TLD}"
   done
@@ -95,55 +99,40 @@ cmd_doctor() {
 
   printf '\n%sEnd to end%s\n' "$B" "$R"
   local code
-  # WHAT to fetch depends on the mode, and getting that wrong is worse than not checking.
-  #
-  # `https://<tld>/` is the auto-mode dashboard. In per-site mode nothing owns 443 — that is the
-  # documented behaviour of the mode, not a fault — so asking for it always failed, and doctor
-  # reported a healthy install as broken. A check that answers a different question than the one
-  # the operator is asking is how you send somebody debugging something that was never wrong.
-  if [ "$MODE" = "persite" ]; then
-    local found=0
-    for f in "$SITES"/*/Caddyfile; do
-      [ -f "$f" ] || continue
-      found=1
-      local host port addr host_re
-      # Both folder layouts, plain and .$TLD-suffixed, name the same host — and a folder
-      # whose name cannot be a hostname has no URL to probe, so say that instead of
-      # building a broken one.
-      host="$(site_host "$(dirname "$f")")"
-      if [ -z "$host" ]; then
-        note "$(basename "$(dirname "$f")") — the directory name cannot be a hostname"
-        continue
-      fi
-      # Dots in the host would otherwise match any character in the pattern below.
-      host_re="${host//./\\.}"
-      # A Caddy address line can carry several hosts: `matsu.ldev, matsu-dev.ldev:8444 {`.
-      # Each address is INDEPENDENT, so a host written without a port is served on 443 rather
-      # than on its neighbour's port — reading the first port on the line would report the wrong
-      # URL for the host that has none. Match this host's own token, and default it to 443.
-      # Only real address lines: not comments, and ending in the `{` that opens a site block.
-      # Every one of these Caddyfiles names its host in a header comment too, and matching that
-      # first reported the host as portless — so every site came back as 443.
-      addr="$(grep -vE '^[[:space:]]*#' "$f" | grep -E '\{[[:space:]]*$' \
-        | grep -oE "(^|[, ])$host_re(:[0-9]+)?" | head -1 | tr -d ' ,')"
-      if [ -z "$addr" ]; then note "$host — no address for it in its Caddyfile"; continue; fi
-      port="${addr##*:}"
-      [ "$port" = "$addr" ] && port=443
-      # No -k. The auto branch below validates the certificate, and a ✓ has to mean the same
-      # thing in both — a site whose cert nothing trusts is a real fault, not one to skip past.
-      code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "https://$host:$port/" 2>/dev/null)"
-      if [ "$code" = "200" ]; then ok "https://$host:$port/ returned 200"
-      elif [ "$code" = "000" ]; then bad "https://$host:$port/ did not connect — is its caddy running?"
-      else note "https://$host:$port/ returned $code"; fi
-    done
-    [ "$found" = 0 ] && note "no per-site Caddyfiles yet — ldev new <name> writes one"
-  else
-    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "https://$TLD/" 2>/dev/null)"
-    if [ "$code" = "200" ]; then ok "https://$TLD/ returned 200"
-    elif [ "$code" = "000" ]; then bad "https://$TLD/ did not connect"
-    else note "https://$TLD/ returned $code"; fi
 
-  fi
+  # The fallback is the claim worth testing, because it is the one that used to be silently
+  # untrue. A hostname with no directory behind it must reach the dashboard rather than a
+  # connection error — that is the whole promise of owning the wildcard, and when nothing
+  # held 443 it failed while every other check above still passed.
+  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "https://$TLD/" 2>/dev/null)"
+  if [ "$code" = "200" ]; then ok "https://$TLD/ returned 200 (dashboard)"
+  elif [ "$code" = "000" ]; then bad "https://$TLD/ did not connect"
+  else note "https://$TLD/ returned $code"; fi
+
+  local probe="ldev-doctor-probe.$TLD"
+  code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "https://$probe/" 2>/dev/null)"
+  if [ "$code" = "200" ]; then ok "an unknown host falls back to the dashboard (tested $probe)"
+  elif [ "$code" = "000" ]; then bad "$probe did not connect — the wildcard fallback is not serving"
+  else note "$probe returned $code"; fi
+
+  # Each site that runs its own server is checked through the FRONT DOOR, portless, because
+  # that is the URL a person types. Probing 127.0.0.1:<port> instead would pass while the
+  # generated proxy block was missing or stale, which is the failure most likely to happen.
+  local host port scheme found=0
+  while read -r host port scheme; do
+    [ -n "$host" ] || continue
+    found=1
+    code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 "https://$host/" 2>/dev/null)"
+    if [ "$code" = "200" ]; then ok "https://$host/ returned 200 (own server, $scheme :$port)"
+    elif [ "$code" = "000" ]; then bad "https://$host/ did not connect"
+    elif [ "$code" = "502" ] || [ "$code" = "503" ]; then
+      bad "https://$host/ returned $code — its own server is not running on $port"
+      fix "cd $SITES/$host && caddy run"
+    else note "https://$host/ returned $code (own server, $scheme :$port)"; fi
+  done <<EOF
+$(site_servers)
+EOF
+  [ "$found" = 0 ] && note "no site runs its own server — ldev standalone <name> sets one up"
 
   printf '\n'
   [ "$FAILED" = 0 ] && printf '%sAll checks passed.%s\n\n' "$GRN" "$R" || printf '%sSome checks failed — see the hints above.%s\n\n' "$RED" "$R"
@@ -152,13 +141,13 @@ cmd_doctor() {
 
 # The hostname a directory answers to, or EMPTY if it can never answer to one.
 #
-# A folder is named for the site and nothing else ("shop"), but folders created before
-# that carry the TLD ("shop.ldev") and are still served, so both resolve to the same host.
+# A folder is named for the site and nothing else ("shop"), but folders created before that
+# carry the TLD ("shop.ldev") and are still served, so both resolve to the same host.
 #
-# Empty is for a name that cannot BE a hostname. Caddy matches on the Host header, which
-# is lowercase and cannot contain a space, so "Scope Canvas AI" is not a site that is
-# merely misconfigured — no URL reaches it, and printing one would be a lie. Case alone is
-# fine: macOS is case-insensitive by default, so ~/Sites/ClothingStore does answer to
+# Empty is for a name that cannot BE a hostname. Caddy matches on the Host header, which is
+# lowercase and cannot contain a space, so "Scope Canvas AI" is not a site that is merely
+# misconfigured — no URL reaches it, and printing one would be a lie. Case alone is fine:
+# macOS is case-insensitive by default, so ~/Sites/ClothingStore does answer to
 # clothingstore.$TLD, and it is reported lowercased to match what you would type.
 site_host() {
   local name="${1##*/}"
@@ -178,7 +167,7 @@ cmd_list() {
     name="$(basename "$d")"
     host="$(site_host "$d")"
     # Not a possible hostname — counted and summarised below rather than listed, so the
-    # listing stays a list of things you can actually open.
+    # listing stays a list of things you can open.
     [ -n "$host" ] || { skipped=$((skipped + 1)); continue; }
     found=1
     if   [ -f "$d/wp-config.php" ]; then kind="WordPress"
@@ -196,35 +185,101 @@ cmd_list() {
   printf '\n'
 }
 
-# Ports already claimed by sibling site Caddyfiles, one per line.
+# Sites that run their own server: "<hostname> <port> <scheme>", one per line.
+#
+# The site directory's own Caddyfile is the single source of truth for where that server
+# listens. Nothing records it centrally, deliberately: the file is the thing you edit, so a
+# second copy of the port in ldev's config is a copy that goes stale the first time somebody
+# changes one and not the other.
+site_servers() {
+  local d f name host host_re addr port scheme
+  for d in "$SITES"/*; do
+    [ -d "$d" ] || continue
+    f="$d/Caddyfile"
+    [ -f "$f" ] || continue
+    name="$(basename "$d")"
+    host="$(site_host "$d")"
+    [ -n "$host" ] || continue
+    # Dots would otherwise match any character in the pattern below.
+    host_re="${host//./\\.}"
+    # A Caddy address line can carry several hosts: `matsu.ldev, matsu-dev.ldev:8444 {`.
+    # Each address is INDEPENDENT, so a host written without a port is served on 443 rather
+    # than on its neighbour's — reading the first port on the LINE would report the wrong one
+    # for the host that has none. Match this host's own token and default it to 443.
+    # Only real address lines: not comments, and ending in the `{` that opens a site block.
+    addr="$(grep -vE '^[[:space:]]*#' "$f" | grep -E '\{[[:space:]]*$' \
+      | grep -oE "(^|[, ])(https?://)?$host_re(:[0-9]+)?" | head -1 | tr -d ' ,')"
+    [ -n "$addr" ] || continue
+    # Scheme decides how the wildcard server must dial this upstream. A site written before
+    # the single-mode change serves HTTPS on its own port; one written since is plain HTTP
+    # behind the front door. Both are proxied correctly, so neither has to be rewritten.
+    scheme=https
+    case "$addr" in
+      http://*)  scheme=http;  addr="${addr#http://}" ;;
+      https://*) scheme=https; addr="${addr#https://}" ;;
+    esac
+    port="${addr##*:}"
+    [ "$port" = "$addr" ] && port=443
+
+    # A site claiming 80 or 443 is claiming the wildcard server's own ports, and fronting it
+    # would generate a block that proxies that hostname to this very server: a request loop
+    # with no site at the end of it. Skip it and say so, loudly, because the Caddyfile that
+    # produces this looks correct in isolation.
+    #
+    # It is not hypothetical. A Caddy address line carrying several hosts gives each one its
+    # OWN address, so `matsu.ldev, matsu-dev.ldev:8444 {` puts the neighbour on 8444 and
+    # matsu.ldev on the default 443 — which is also why that site never started: an
+    # unprivileged process cannot bind a specific address on a privileged port.
+    if [ "$port" = "443" ] || [ "$port" = "80" ]; then
+      echo "ldev: $f puts $host on port $port, which the wildcard server owns — skipping it (give it a port >= 1024)" >&2
+      continue
+    fi
+
+    printf '%s %s %s\n' "$host" "$port" "$scheme"
+  done
+}
+
+# Ports already claimed, one per line: every sibling site's pair, plus the two the wildcard
+# server itself holds.
 #
 # Read from the FILES, not from listening sockets: a site that is currently stopped still
 # owns its ports, and allocating around only what is running would hand a new site a pair
 # that collides the moment the old one starts again.
-persite_used_ports() {
-  grep -hoE '(admin localhost:|:)[0-9]{4,5}' "$SITES"/*/Caddyfile 2>/dev/null \
-    | grep -oE '[0-9]{4,5}$' | sort -un
+#
+# The wildcard server's own ports belong in here, and leaving them out was a real collision
+# rather than a theoretical one. Site admin ports used to start at ADMIN_PORT — the SAME
+# value the wildcard server binds — so the very first site took the port the front door was
+# already using and lost the race silently, because a Caddy that cannot bind its admin API
+# exits rather than warning.
+site_used_ports() {
+  {
+    grep -hoE '(admin localhost:|:)[0-9]{4,5}' "$SITES"/*/Caddyfile 2>/dev/null \
+      | grep -oE '[0-9]{4,5}$'
+    printf '%s\n%s\n' "${ADMIN_PORT:-2019}" "${ASK_PORT:-2018}"
+  } | sort -un
 }
 
-# The next free (site, admin) pair, kept in step: 8443/2019, 8444/2020, ...
+# The next free (site, admin) pair, kept in step: 8443/2020, 8444/2021, ...
 #
-# Both must be free TOGETHER. Allocating them independently is exactly the bug this
-# exists to prevent: the site port increments, the admin port stays at the default, and
-# the second Caddy exits at startup because two processes cannot share an admin port.
-# That failure is silent — the site simply never comes up.
-persite_next_ports() {
-  local site_base="${SITE_PORT_BASE:-8443}" admin_base="${ADMIN_PORT:-2019}"
+# Both must be free TOGETHER. Allocating them independently is exactly the bug this exists
+# to prevent: the site port increments, the admin port stays at the default, and the second
+# Caddy exits at startup because two processes cannot share an admin port. That failure is
+# silent — the site simply never comes up.
+site_next_ports() {
+  local site_base="${SITE_PORT_BASE:-8443}"
+  # One above the wildcard server's admin port, so the first site cannot be handed it.
+  local admin_base="${SITE_ADMIN_PORT_BASE:-$(( ${ADMIN_PORT:-2019} + 1 ))}"
   local used n site admin
-  used="$(persite_used_ports)"
+  used="$(site_used_ports)"
   for n in $(seq 0 200); do
     site=$((site_base + n)); admin=$((admin_base + n))
     printf '%s\n' "$used" | grep -qx "$site" && continue
     printf '%s\n' "$used" | grep -qx "$admin" && continue
-    # Also skip anything currently bound by an unrelated process, so ldev never hands out
-    # a port something outside ldev already answers on.
+    # Also skip anything currently bound by an unrelated process, so ldev never hands out a
+    # port something outside ldev already answers on.
     #
     # LDEV_SKIP_PORT_PROBE exists for tests: the probe reads the real machine, so a test
-    # asserting "the first pair is 8443/2019" fails on any machine already serving 8443 —
+    # asserting "the first pair is 8443/2020" fails on any machine already serving 8443 —
     # which is every machine ldev is actually used on. Config-file scanning above is the
     # deterministic half and is what the tests exercise.
     if [ "${LDEV_SKIP_PORT_PROBE:-0}" != "1" ]; then
@@ -238,27 +293,47 @@ persite_next_ports() {
   return 1
 }
 
+# The directory a site name refers to, whichever of the two layouts it uses on disk.
+# Empty if there is no directory for it yet.
+site_dir() {
+  local name="$1"
+  # Plain first, because that is the one the wildcard template serves when both exist:
+  # `root @plain` overrides the suffixed root. Resolving them the other way round here
+  # would point `ldev standalone` and `ldev rehome` at the folder NOT being served, which
+  # is the same shadowing trap `ldev list` and `ldev doctor` warn about.
+  [ -d "$SITES/$name" ]      && { printf '%s' "$SITES/$name"; return 0; }
+  [ -d "$SITES/$name.$TLD" ] && { printf '%s' "$SITES/$name.$TLD"; return 0; }
+  return 0
+}
+
+# A site name, and nothing else. `ldev new ../../foo` would otherwise write outside $SITES —
+# and outside the glob the port allocator scans, so the next site would be handed a port
+# this one already holds. A `|` would also break the sed replacements.
+require_site_name() {
+  [[ "$1" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || {
+    echo "ldev: '$1' is not a site name — letters, digits, dot, dash and underscore only" >&2
+    exit 1
+  }
+}
+
 cmd_new() {
   local name="${1:?usage: ldev new <name>}"
   name="${name%.$TLD}"
-  # A hostname label, and nothing else. `ldev new ../../foo` would otherwise write outside
-  # $SITES — and outside the glob the port allocator scans, so the next site would be handed
-  # a port this one already holds. A `|` would also break the sed replacement below.
-  [[ "$name" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]] || {
-    echo "ldev: '$name' is not a site name — letters, digits, dot, dash and underscore only" >&2
-    exit 1
-  }
-  # The folder is named for the site, with no .$TLD suffix: the hostname already supplies
-  # that, and repeating it in the directory name meant an existing project could not be
-  # served without renaming it first. A folder that IS suffixed still works, so an install
-  # made before this keeps serving — and is reused here rather than shadowed by a second,
-  # empty folder for the same hostname.
-  local dir="$SITES/$name"
-  [ -d "$dir" ] && { echo "ldev: $dir already exists"; exit 1; }
+  require_site_name "$name"
+
+  local existing; existing="$(site_dir "$name")"
+  [ -n "$existing" ] && { echo "ldev: $existing already exists"; exit 1; }
+  # A second, empty folder for a hostname an older suffixed folder already serves would
+  # shadow it — the plain one wins — so the site would appear to empty itself.
   [ -d "$SITES/$name.$TLD" ] && {
     echo "ldev: $SITES/$name.$TLD already exists and is served at https://$name.$TLD/"
     exit 1
   }
+
+  # Bare, not "$name.$TLD". Both layouts are served, so the suffix buys nothing on a
+  # directory ldev creates itself — and a plain folder name is what every other tool that
+  # touches this directory (a git clone, an editor, a file listing) is going to call it.
+  local dir="$SITES/$name"
   mkdir -p "$dir"
   cat > "$dir/index.html" <<EOF
 <!doctype html>
@@ -270,61 +345,207 @@ cmd_new() {
 </body>
 EOF
   echo "created $dir"
+  # A directory IS the whole site: the wildcard server resolves it per request, so this is
+  # live now — no config to write, no port to pick, nothing to restart.
+  echo "        https://$name.$TLD/"
+}
 
-  # In auto mode a directory IS the whole site: one Caddy resolves it per request, so a
-  # new folder is live immediately and needs no config and no restart.
-  if [ "${MODE:-auto}" != "persite" ]; then
-    echo "        https://$name.$TLD/"
-    return 0
-  fi
+cmd_standalone() {
+  local name="${1:?usage: ldev standalone <name>}"
+  name="${name%.$TLD}"
+  require_site_name "$name"
 
-  # Per-site mode needs its own Caddyfile, and needs its two ports not to collide with
-  # any sibling's. Doing this by hand is what left the second site permanently down.
+  local dir; dir="$(site_dir "$name")"
+  [ -n "$dir" ] || { echo "ldev: no directory for '$name' — ldev new $name" >&2; exit 1; }
+  [ -f "$dir/Caddyfile" ] && { echo "ldev: $dir/Caddyfile already exists — it already runs its own server"; exit 1; }
+
+  # Two ports that collide with no sibling and neither of the wildcard server's own. Doing
+  # this by hand is what left the second site permanently down.
   local ports site_port admin_port
-  ports="$(persite_next_ports)" || return 1
+  ports="$(site_next_ports)" || return 1
   site_port="${ports% *}"; admin_port="${ports#* }"
 
   sed -e "s|__NAME__|$name|g" -e "s|__TLD__|$TLD|g" -e "s|__SITE_DIR__|$dir|g" \
       -e "s|__SITE_PORT__|$site_port|g" -e "s|__ADMIN_PORT__|$admin_port|g" \
       -e "s|__PHP_FPM__|$PHP_FPM|g" -e "s|__LOGDIR__|$LOGDIR|g" \
-      "$REPO_DIR/templates/Caddyfile.persite.tmpl" > "$dir/Caddyfile"
+      "$REPO_DIR/templates/Caddyfile.site.tmpl" > "$dir/Caddyfile"
 
   if caddy validate --config "$dir/Caddyfile" >/dev/null 2>&1; then
-    echo "        wrote $dir/Caddyfile (site $site_port, admin $admin_port)"
+    echo "wrote $dir/Caddyfile (site $site_port, admin $admin_port)"
   else
-    echo "        ${YEL}wrote $dir/Caddyfile but it does NOT validate${R}" >&2
-    echo "        caddy validate --config $dir/Caddyfile" >&2
+    echo "${YEL}wrote $dir/Caddyfile but it does NOT validate${R}" >&2
+    echo "caddy validate --config $dir/Caddyfile" >&2
     return 1
   fi
-  echo "        https://$name.$TLD:$site_port/"
-  echo "        start it: cd $dir && caddy run"
+  echo "        start it:  cd $dir && caddy run"
+  echo "        then:      ldev apply     # generates the proxy block, so the URL stays portless"
+  echo "        reachable: https://$name.$TLD/"
 }
 
-cmd_apply() {
-  [ "$MODE" = "auto" ] || { echo "ldev: apply only applies to mode 'auto' (this install is '$MODE')"; exit 1; }
+# One `reverse_proxy` block per site that runs its own server.
+#
+# Generated rather than hand-maintained because the site's own Caddyfile can change its port
+# at any time, and a stale block here is a 502 on a site whose own server is running
+# perfectly — the most confusing shape this failure has.
+site_proxy_blocks() {
+  local host port scheme
+  while read -r host port scheme; do
+    [ -n "$host" ] || continue
+    printf '%s {\n' "$host"
+    printf '\tbind 127.0.0.1 ::1\n'
+    printf '\ttls {\n\t\ton_demand\n\t}\n'
+    if [ "$scheme" = "http" ]; then
+      printf '\treverse_proxy http://127.0.0.1:%s\n' "$port"
+    else
+      # An upstream serving HTTPS on loopback with Caddy's internal CA. The certificate names
+      # the SITE, not 127.0.0.1, so verification cannot succeed against the dial address —
+      # and there is nothing for it to protect: the connection never leaves the machine, and
+      # the hop the outside world can see is the one this server already terminated with a
+      # real certificate. Sites written since the single-mode change serve plain HTTP here
+      # and take the branch above instead.
+      printf '\treverse_proxy https://127.0.0.1:%s {\n' "$port"
+      printf '\t\ttransport http {\n\t\t\ttls\n\t\t\ttls_insecure_skip_verify\n\t\t}\n'
+      printf '\t}\n'
+    fi
+    printf '}\n\n'
+  done <<EOF
+$(site_servers)
+EOF
+}
+
+# Move a WordPress site off its old ported URL and onto the portless one.
+#
+# WordPress stores its own address in two places that must agree: the WP_HOME/WP_SITEURL
+# constants in wp-config.php, which win when present, and the database, where the old URL
+# is baked into post content, options, menus and widget settings. Changing only the
+# constants gives you a site that loads and then serves every image and link from a port
+# that no longer answers, which looks like a broken theme rather than a stale URL.
+#
+# The database half goes through `wp search-replace`, never SQL. WordPress stores arrays as
+# PHP-serialized strings whose length prefixes are counted in bytes, so replacing a longer
+# URL with a shorter one inside one of those corrupts the record: PHP reads the declared
+# length, overshoots, and the option comes back as false. Every plugin depending on it then
+# silently reverts to defaults. wp-cli unserializes, replaces, and reserializes instead.
+cmd_rehome() {
+  local name="${1:?usage: ldev rehome <name> [--yes]}" assume_yes=0
+  [ "${2:-}" = "--yes" ] && assume_yes=1
+  name="${name%.$TLD}"
+  require_site_name "$name"
+
+  local dir; dir="$(site_dir "$name")"
+  [ -n "$dir" ] || { echo "ldev: no directory for '$name'" >&2; exit 1; }
+  [ -f "$dir/wp-config.php" ] || { echo "ldev: $dir is not a WordPress site (no wp-config.php)" >&2; exit 1; }
+  command -v wp >/dev/null 2>&1 || {
+    echo "ldev: wp-cli is required — brew install wp-cli" >&2
+    echo "      (a plain SQL replace would corrupt serialized options; see the note above this function)" >&2
+    exit 1
+  }
+
+  local host; host="$(site_host "$dir")"
+  [ -n "$host" ] || { echo "ldev: '$(basename "$dir")' cannot be a hostname" >&2; exit 1; }
+  local new_url="https://$host"
+
+  # The constants win over the database when they are present, so read them first — asking
+  # WordPress for `option get home` while a constant overrides it reports the value that is
+  # NOT in the database, which is the one half that does not need replacing.
+  local old_url
+  old_url="$(grep -oE "define\(\s*'WP_HOME'\s*,\s*'[^']+'" "$dir/wp-config.php" | grep -oE "'[^']+'\$" | tr -d "'")"
+  if [ -z "$old_url" ]; then
+    old_url="$(wp --path="$dir" option get home --skip-plugins --skip-themes 2>/dev/null)"
+  fi
+  [ -n "$old_url" ] || { echo "ldev: could not determine the current URL for $name" >&2; exit 1; }
+
+  if [ "$old_url" = "$new_url" ]; then
+    echo "$name is already at $new_url — nothing to do"
+    return 0
+  fi
+
+  printf '\n%s%s%s\n' "$B" "$name" "$R"
+  printf '  from  %s\n  to    %s\n  dir   %s\n\n' "$old_url" "$new_url" "$dir"
+
+  # Say how much is about to change BEFORE asking, because "1 replacement" and "4,000
+  # replacements" deserve different answers and only one of them is worth a backup.
+  echo "counting what would change (dry run)..."
+  local n
+  n="$(wp --path="$dir" search-replace "$old_url" "$new_url" \
+        --all-tables-with-prefix --skip-columns=guid --dry-run --format=count \
+        --skip-plugins --skip-themes 2>/dev/null | tail -1)"
+  [ -n "$n" ] || n="?"
+  echo "  $n database replacement(s), plus WP_HOME and WP_SITEURL in wp-config.php"
+  echo ""
+
+  if [ "$assume_yes" != 1 ]; then
+    [ -t 0 ] || { echo "ldev: refusing to rewrite site data without a terminal to confirm on — pass --yes" >&2; exit 1; }
+    local reply=""
+    read -r -p "Apply this? [y/N]: " reply </dev/tty || true
+    [[ "$reply" =~ ^[Yy] ]] || { echo "aborted — nothing changed"; return 0; }
+  fi
+
+  # Back up before touching either half. A database export is the only one of the two that
+  # cannot be reconstructed by hand afterwards.
+  local stamp backup
+  stamp="$(date '+%Y%m%d-%H%M%S')"
+  backup="$dir/.ldev-rehome-$stamp.sql"
+  echo "backing up the database to $backup"
+  wp --path="$dir" db export "$backup" --skip-plugins --skip-themes >/dev/null 2>&1 \
+    || { echo "ldev: database export failed — stopping before anything is changed" >&2; exit 1; }
+  cp "$dir/wp-config.php" "$dir/wp-config.php.ldev-$stamp.bak"
+
+  # Constants first: if the search-replace fails halfway, a site whose constants already
+  # point at the working URL is reachable enough to fix by hand. The reverse is not.
+  sed -i '' -E "s|(define\(\s*'WP_HOME'\s*,\s*')[^']+(')|\1$new_url\2|; s|(define\(\s*'WP_SITEURL'\s*,\s*')[^']+(')|\1$new_url\2|" "$dir/wp-config.php"
+  echo "updated WP_HOME and WP_SITEURL"
+
+  wp --path="$dir" search-replace "$old_url" "$new_url" \
+     --all-tables-with-prefix --skip-columns=guid --skip-plugins --skip-themes >/dev/null 2>&1 \
+    || { echo "ldev: search-replace failed — restore with: wp --path=$dir db import $backup" >&2; exit 1; }
+  echo "rewrote $n database reference(s)"
+
+  wp --path="$dir" cache flush --skip-plugins --skip-themes >/dev/null 2>&1 || true
+
+  printf '\n  %s is now at %s\n' "$name" "$new_url"
+  printf '  undo:  wp --path=%s db import %s\n         cp %s/wp-config.php.ldev-%s.bak %s/wp-config.php\n\n' \
+    "$dir" "$backup" "$dir" "$stamp" "$dir"
+}
+
+# Render the wildcard Caddyfile and validate it. Separate from `apply` because install.sh
+# needs the config on disk BEFORE it can bootstrap the launchd daemon that reads it, and
+# `apply` ends by restarting a service that does not exist yet at that point.
+cmd_render() {
+  local blocks; blocks="$(mktemp)"
+  # shellcheck disable=SC2064
+  trap "rm -f '$blocks'" RETURN
+  site_proxy_blocks > "$blocks"
+
+  # Two passes: sed for the scalar placeholders, then awk to splice in the generated blocks.
+  # sed cannot do the second — a multi-line replacement through `s|__PROXY_SITES__|...|` has
+  # to escape every newline and backslash in the payload, and the payload is generated.
   sed -e "s|__TLD__|$TLD|g" -e "s|__SITES__|$SITES|g" -e "s|__DASHBOARD__|$DASHBOARD|g" \
       -e "s|__PHP_FPM__|$PHP_FPM|g" -e "s|__ADMIN_PORT__|$ADMIN_PORT|g" \
       -e "s|__ASK_PORT__|$ASK_PORT|g" -e "s|__LOGDIR__|$LOGDIR|g" \
-      "$REPO_DIR/templates/Caddyfile.auto.tmpl" > "$CADDYFILE"
-  echo "wrote $CADDYFILE"
-  caddy validate --config "$CADDYFILE" >/dev/null 2>&1 && echo "validates" || { echo "INVALID — not restarting"; exit 1; }
+      "$REPO_DIR/templates/Caddyfile.tmpl" \
+    | awk -v f="$blocks" '$0 == "__PROXY_SITES__" { while ((getline line < f) > 0) print line; next } { print }' \
+    > "$CADDYFILE"
+
+  local n; n="$(site_servers | grep -c . || true)"
+  echo "wrote $CADDYFILE ($n site(s) with their own server, proxied)"
+  caddy validate --config "$CADDYFILE" >/dev/null 2>&1 || { echo "INVALID — see: caddy validate --config $CADDYFILE" >&2; return 1; }
+  echo "validates"
+}
+
+cmd_apply() {
+  cmd_render || { echo "not restarting" >&2; exit 1; }
   cmd_restart
 }
 
 cmd_restart() {
-  if [ "$MODE" = "auto" ]; then
-    echo "restarting (needs sudo)..."
-    sudo launchctl kickstart -k system/com.ldev.caddy && echo "restarted"
-  else
-    echo "mode '$MODE' has no single service to restart"
-  fi
+  echo "restarting (needs sudo)..."
+  sudo launchctl kickstart -k system/com.ldev.caddy && echo "restarted"
 }
 
 cmd_status() {
-  printf '\n  TLD        .%s\n  Sites      %s\n  Mode       %s\n  Dashboard  %s\n\n' "$TLD" "$SITES" "$MODE" "$DASHBOARD"
-  if [ "$MODE" = "auto" ]; then
-    sudo launchctl print system/com.ldev.caddy 2>/dev/null | awk '/state =|pid =/{print "  "$0}' || echo "  service not loaded"
-  fi
+  printf '\n  TLD        .%s\n  Sites      %s\n  Dashboard  %s\n\n' "$TLD" "$SITES" "$DASHBOARD"
+  sudo launchctl print system/com.ldev.caddy 2>/dev/null | awk '/state =|pid =/{print "  "$0}' || echo "  service not loaded"
   printf '\n'
 }
 
@@ -332,10 +553,13 @@ case "${1:-doctor}" in
   doctor)  shift; cmd_doctor "$@" ;;
   list|ls) shift; cmd_list "$@" ;;
   new)     shift; cmd_new "$@" ;;
+  standalone) shift; cmd_standalone "$@" ;;
+  rehome)  shift; cmd_rehome "$@" ;;
+  render)  shift; cmd_render "$@" ;;
   apply)   shift; cmd_apply "$@" ;;
   restart) shift; cmd_restart "$@" ;;
   status)  shift; cmd_status "$@" ;;
   config)  cat "$CONFIG_FILE" ;;
-  -h|--help|help) sed -n '3,12p' "$0" | sed 's/^# \{0,1\}//' ;;
+  -h|--help|help) sed -n '3,$p' "$0" | sed -n '/^#/!q; s/^# \{0,1\}//p' ;;
   *) echo "ldev: unknown command '$1' (try: ldev help)" >&2; exit 1 ;;
 esac

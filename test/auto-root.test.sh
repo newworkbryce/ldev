@@ -27,10 +27,14 @@ echo DASHBOARD   > "$DASH/index.html"
 pass=0; fail=0
 check() { if [ "$2" = "$3" ]; then echo "  ok   $1 -> $2"; pass=$((pass+1)); else echo "  FAIL $1: got '$2' want '$3'"; fail=$((fail+1)); fi; }
 
+: > "$TMP/blocks"
+
 sed -e "s|__TLD__|ldev|g" -e "s|__SITES__|$SITES|g" -e "s|__DASHBOARD__|$DASH|g" \
     -e "s|__PHP_FPM__|127.0.0.1:9000|g" -e "s|__ADMIN_PORT__|12019|g" \
     -e "s|__ASK_PORT__|12018|g" -e "s|__LOGDIR__|$TMP/logs|g" \
-    "$REPO/templates/Caddyfile.auto.tmpl" > "$TMP/Caddyfile"
+    "$REPO/templates/Caddyfile.tmpl" \
+  | awk -v f="$TMP/blocks" '$0 == "__PROXY_SITES__" { while ((getline line < f) > 0) print line; next } { print }' \
+  > "$TMP/Caddyfile"
 
 if grep -q '__[A-Z_]*__' "$TMP/Caddyfile"; then
   echo "  FAIL unrendered placeholders:"; grep -o '__[A-Z_]*__' "$TMP/Caddyfile" | sort -u | sed 's/^/       /'; fail=$((fail+1))

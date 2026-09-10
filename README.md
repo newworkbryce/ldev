@@ -23,7 +23,7 @@ The TLD is a setting. `.ldev` is only the default — install it as `.test`, `.w
 - [⚡ Install](#-install)
 - [🚀 Making a site](#-making-a-site)
 - [🧭 Commands](#-commands)
-- [🔀 Serving modes](#-serving-modes)
+- [🔀 One server, and sites that need their own](#-one-server-and-sites-that-need-their-own)
 - [🤖 Headless and automated browsers](#-headless-and-automated-browsers)
 - [🧩 How it works](#-how-it-works)
 - [📊 The dashboard](#-the-dashboard)
@@ -74,7 +74,7 @@ whether to make the root-owned changes for you — then does the rest.
 Non-interactive:
 
 ```sh
-./install.sh --tld test --sites ~/Code --mode auto --yes
+./install.sh --tld test --sites ~/Code --yes
 ./install.sh --defaults
 ```
 
@@ -82,18 +82,32 @@ Non-interactive:
 |---|---|
 | `--tld <name>` | The TLD, one label, no dot. Default `ldev`. |
 | `--sites <dir>` | Where your site folders live. Default `~/Sites`. |
-| `--mode auto\|persite` | Serving mode; see below. Default `auto`. |
 | `--php-fpm <host:port>` | PHP-FPM address. Default `127.0.0.1:9000`. |
 | `--skip-dns` | Leave `/etc/resolver` and dnsmasq alone. |
 | `--yes`, `-y` | Answer yes to every confirmation. |
 | `--defaults` | Accept every default and prompt for nothing. |
 
-Then put the CLI on your `PATH`:
+The installer then offers to put the CLI on your `PATH`, and says exactly what it would
+append and to which file before it does:
 
-```sh
-# the installer prints this line with your real checkout path already filled in
-echo 'export PATH="/path/to/ldev/bin:$PATH"' >> ~/.zshrc
 ```
+ldev lives in /path/to/ldev/bin, which is not on your PATH.
+This would append to /Users/you/.zshrc:
+
+  export PATH="/path/to/ldev/bin:$PATH"
+
+Add it? [y/N]:
+```
+
+It picks the file and the syntax from your **login shell**, not from a guess: `.zshrc` for
+zsh, `.bash_profile` for bash (macOS Terminal opens login shells, which read that and
+pointedly not `.bashrc`), `config.fish` for fish — where the line is `fish_add_path`,
+because `export PATH="…:$PATH"` is a syntax error in fish. A shell it does not recognise
+gets the line printed rather than written to a file it guessed at.
+
+Decline, and it prints the command to run yourself. Re-running the installer will not
+stack duplicates, and if `ldev` already resolves to a *different* checkout it says which
+one wins instead of appearing to fix it.
 
 Finally, confirm the whole stack:
 
@@ -166,7 +180,10 @@ URL that cannot work.
 ldev doctor      # check each layer separately and say which one is broken
 ldev list        # sites found under the sites directory, and their type
 ldev new <name>  # create a site directory, live immediately
-ldev apply       # re-render the server config and restart (auto mode)
+ldev standalone <name>  # give one site its own server, fronted by the wildcard one
+ldev rehome <name>      # move a WordPress site onto its portless URL
+ldev render      # re-render the server config, without restarting
+ldev apply       # re-render the server config and restart
 ldev restart     # restart the server
 ldev status      # is the service running
 ldev config      # print the saved configuration
@@ -182,23 +199,38 @@ results, each with the command that fixes it.
 
 ---
 
-## 🔀 Serving modes
+## 🔀 One server, and sites that need their own
 
-Chosen during install, because the right answer depends on what the machine already runs.
+One Caddy owns 80 and 443 for the whole TLD. Sites resolve by directory name, certificates
+are issued per host on first request, and an unknown host falls back to the dashboard.
+There is nothing to choose at install time.
 
-| Mode | What it does | Choose it when |
-|---|---|---|
-| ⚡ **auto** | One Caddy owns 80 and 443 for the whole TLD. Sites resolve by directory name; certificates are issued per host on first request; unknown hosts fall back to the dashboard. | **Default.** Nothing else needs those ports. |
-| 🧱 **persite** | One Caddy per site on its own high port (8443, 8444, …), each with its own Caddyfile and certificate. See [docs/persite.md](docs/persite.md). | You already have per-site servers and want to keep them. |
+A site sometimes needs what that shared server cannot express — its own PHP version, its
+own certificate, a proxy to an app already running, or restarts that leave its neighbours
+alone. That site runs its own Caddy on a high port and is **fronted** by the wildcard one:
 
-Only **auto** makes a new site work with no configuration at all. `persite` is there so
-that installing this does not tear down a setup that already works.
+```sh
+ldev standalone shop     # writes shop its own Caddyfile on a free port pair
+cd ~/Sites/shop && caddy run
+ldev apply               # generate the proxy block, so the URL stays portless
+```
 
-> ℹ️ An `apache` mode was named in an earlier config format and is **not supported**.
-> Serving the TLD from httpd needs a vhost and a certificate per host — httpd has no
-> on-demand issuance, and a `*.ldev` certificate is rejected by browsers for `shop.ldev` —
-> which is a different product from "a folder is a site". The installer refuses it by
-> name rather than accepting a mode nothing downstream implements.
+It keeps everything the shared server gives everything else — `https://shop.ldev` with no
+port, a certificate, the `.localhost` origin, and the dashboard fallback for names that do
+not exist. See [docs/standalone-sites.md](docs/standalone-sites.md).
+
+> ℹ️ **`persite` and `apache` modes are gone.** Both were install-wide answers to per-site
+> questions. `persite` gave up ports 80 and 443 for *every* site so that *one* could have
+> its own server — and with those ports went the dashboard fallback (which needs something
+> listening on 443 for hostnames with no folder behind them), the portless URLs and the
+> `.localhost` origins. Those four capabilities are now a per-site escalation that costs
+> none of that. `apache` never worked: the template it rendered was never committed, so
+> choosing it killed the installer. The installer refuses both by name rather than
+> accepting a mode nothing downstream implements.
+>
+> The trade this makes is real and worth stating: ldev now requires ports 80 and 443, and
+> on macOS that means a root-owned launchd daemon. A machine where something else must keep
+> those ports cannot run it.
 
 ---
 
@@ -273,10 +305,10 @@ that `ldev` sources on every run:
 |---|---|
 | `TLD` | The local TLD, without the dot |
 | `SITES` | Directory holding your site folders |
-| `MODE` | `auto` or `persite` |
 | `PHP_FPM` | PHP-FPM address, e.g. `127.0.0.1:9000` |
 | `DASHBOARD` | Path to the built dashboard |
-| `ADMIN_PORT`, `SITE_PORT_BASE`, `ASK_PORT` | Ports; the first two are the per-site allocation bases |
+| `ADMIN_PORT`, `ASK_PORT` | The wildcard server's own admin API and on-demand-TLS ask endpoint |
+| `SITE_PORT_BASE` | First port handed to a site that runs its own server; admin ports start one above `ADMIN_PORT` |
 | `LOGDIR` | Where access logs are written |
 | `REPO_DIR` | This checkout, so `ldev` can find its templates |
 
@@ -306,7 +338,9 @@ fixes whatever failed. The common ones:
 | 🧭 You get the dashboard instead of your site | The folder has no `index.php` or `index.html` — or a plain folder is shadowing a `.ldev` one | `ldev list` |
 | 🤖 A headless browser loads nothing | It refuses custom TLDs | Use `http://<name>.localhost/` |
 | 🔤 A folder never appears | Its name cannot be a hostname — a space, or another character a `Host:` header cannot carry | `ldev list` counts these; rename them |
-| 🧱 A per-site server "does not start" | Two sites sharing an admin port — the second exits silently | [docs/persite.md](docs/persite.md) |
+| 🧱 A site's own server "does not start" | Two sites sharing an admin port — the second exits silently | [docs/standalone-sites.md](docs/standalone-sites.md) |
+| 🔁 A site's own server runs, but its URL still hits the dashboard | No proxy block for it yet | `ldev apply` |
+| ↩️ A WordPress site redirects to `:8443` | `WP_HOME`/`WP_SITEURL` still name the old ported URL | `ldev rehome <name>` |
 
 Logs are in `~/Library/Logs/ldev/`.
 
@@ -327,6 +361,7 @@ instead.
 | `~/Library/Logs/ldev/` | you | access logs |
 | `/Library/LaunchDaemons/com.ldev.caddy.plist` | root | starts Caddy on 80/443 at boot |
 | system trust store | root | trusts the local CA, once |
+| your shell's startup file | you | one `PATH` line — only if you accept the prompt |
 
 Nothing is written anywhere else.
 
@@ -338,8 +373,10 @@ Plain bash, no framework. Each script sets up a throwaway tree, asserts, and cle
 
 ```sh
 bash test/auto-root.test.sh      # hostname → folder, both layouts, on a real Caddy
-bash test/persite-new.test.sh    # ldev new writes a valid, non-colliding site config
-bash test/persite-ports.test.sh  # the site/admin port allocator
+bash test/standalone.test.sh     # new, standalone and render: config, ports, proxy blocks
+bash test/site-ports.test.sh     # the site/admin port allocator
+bash test/rehome.test.sh         # what rehome refuses to do to your site data
+bash test/path-setup.test.sh     # the right startup file and syntax per shell
 ```
 
 They skip gracefully when `caddy` is not on the `PATH`, or when a port they need is busy.
@@ -360,8 +397,10 @@ rm -rf ~/.config/ldev ~/Library/Logs/ldev   # config and the generated Caddyfile
 caddy untrust                    # optional: remove the local CA from the trust store
 ```
 
-Then remove the `conf-dir` line `install.sh` appended to
-`$(brew --prefix)/etc/dnsmasq.conf`, and drop `bin/` from your `PATH`.
+Then remove the two lines `install.sh` appended: the `conf-dir` line in
+`$(brew --prefix)/etc/dnsmasq.conf`, and — if you accepted the PATH prompt — the `# ldev`
+line and the one after it in your shell's startup file (`~/.zshrc`, `~/.bash_profile`,
+`~/.profile` or `~/.config/fish/config.fish`, whichever it named at the time).
 
 **Your site folders are never touched** — uninstalling stops them being served, and
 nothing more.
