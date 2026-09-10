@@ -1,0 +1,155 @@
+{
+  "version": "0.1.0",
+  "id": "bd21e9d4-8d02-4aa6-9b01-d47e757bb01b",
+  "timestamp": "2026-09-10T03:32:00Z",
+  "vcs": {
+    "type": "git",
+    "revision": "917b2590cf979d24aaa18ef25563564218b2a2d4"
+  },
+  "tool": {
+    "name": "triaj",
+    "version": "1.3.1"
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/3e8f56a2-7837-42a5-adfb-4e072f3876ee",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 33,
+              "end_line": 33,
+              "content_hash": "sha256:f1e097bc0d84ca38e3e4ad489f7fb124ab4f8b1a0c3ee1908de76c4bc936a327",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 218,
+              "end_line": 218,
+              "content_hash": "sha256:0f8a113a740f57e66490c831265dfa4ad7cac4d48ec0a03c7aae4afeed4cb39b",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 452,
+              "end_line": 452,
+              "content_hash": "sha256:c1a96af2c4f59227f955e2c6bcf80d5c9032e57771102c9969601731ea3e1923",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 459,
+              "end_line": 485,
+              "content_hash": "sha256:cc11bcbaaa3d82b064db6bc5e78d8e98e69b3daf2a110924c3237602e848f523",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "bin/ldev",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/3e8f56a2-7837-42a5-adfb-4e072f3876ee",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 11,
+              "end_line": 11,
+              "content_hash": "sha256:346ff975ac477178402280619731c0b0c574bd9eeee709ca77cbc24a55a5c5b8",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 71,
+              "end_line": 71,
+              "content_hash": "sha256:0dfefa89f853040d1c3a47c4750efd77c48e6187bf9a5b46abae175de7c9012b",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 122,
+              "end_line": 134,
+              "content_hash": "sha256:99d42bac14a2852f90f76ee92e8625c06ac2118a5413d46c26c6117befe7696a",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 655,
+              "end_line": 762,
+              "content_hash": "sha256:7c34cf3290baa849f1b23085b5e46f3f0a3fa0f22a734641943db9818bf4b7a9",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 811,
+              "end_line": 811,
+              "content_hash": "sha256:2401684e3c91e05e947aa40b4d2369d9d838c150811e148c8a601bf97fc25cb7",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "test/update.test.sh",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/3e8f56a2-7837-42a5-adfb-4e072f3876ee",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 1,
+              "end_line": 80,
+              "content_hash": "sha256:826c1fe1c36d74fb453c0106ad6d98cd63ec01f74d2346d465c8e49a57d293e0",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "triaj": {
+      "task": "Migrate an older config without reinstalling",
+      "status": "Waiting",
+      "agent": "claude-code",
+      "attribution_granularity": "commit"
+    }
+  }
+}
