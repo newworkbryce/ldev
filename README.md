@@ -335,7 +335,7 @@ that `ldev` sources on every run:
 | `SITES` | Directory holding your site folders |
 | `PHP_FPM` | PHP-FPM address, e.g. `127.0.0.1:9000` |
 | `DASHBOARD` | Path to the built dashboard |
-| `ADMIN_PORT`, `ASK_PORT` | The wildcard server's own admin API and on-demand-TLS ask endpoint |
+| `ADMIN_PORT`, `ASK_PORT` | The wildcard server's own admin API and on-demand-TLS ask endpoint. A re-install keeps whatever is recorded here rather than resetting to the defaults, and steps past either if something else already holds it |
 | `SITE_PORT_BASE` | First port handed to a site that runs its own server; admin ports start one above `ADMIN_PORT` |
 | `LOGDIR` | Where access logs are written |
 | `REPO_DIR` | This checkout, so `ldev` can find its templates |
@@ -408,6 +408,7 @@ bash test/site-ports.test.sh     # the site/admin port allocator
 bash test/rehome.test.sh         # what rehome refuses to do to your site data
 bash test/path-setup.test.sh     # the right startup file and syntax per shell
 bash test/existing-install.test.sh  # which launchd job is in the way, and which is fronted
+bash test/install-ports.test.sh  # a re-install keeps ports you moved, and skips busy ones
 ```
 
 They skip gracefully when `caddy` is not on the `PATH`, or when a port they need is busy.
