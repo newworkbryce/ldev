@@ -87,12 +87,27 @@ Non-interactive:
 | `--yes`, `-y` | Answer yes to every confirmation. |
 | `--defaults` | Accept every default and prompt for nothing. |
 
-Then put the CLI on your `PATH`:
+The installer then offers to put the CLI on your `PATH`, and says exactly what it would
+append and to which file before it does:
 
-```sh
-# the installer prints this line with your real checkout path already filled in
-echo 'export PATH="/path/to/ldev/bin:$PATH"' >> ~/.zshrc
 ```
+ldev lives in /path/to/ldev/bin, which is not on your PATH.
+This would append to /Users/you/.zshrc:
+
+  export PATH="/path/to/ldev/bin:$PATH"
+
+Add it? [y/N]:
+```
+
+It picks the file and the syntax from your **login shell**, not from a guess: `.zshrc` for
+zsh, `.bash_profile` for bash (macOS Terminal opens login shells, which read that and
+pointedly not `.bashrc`), `config.fish` for fish — where the line is `fish_add_path`,
+because `export PATH="…:$PATH"` is a syntax error in fish. A shell it does not recognise
+gets the line printed rather than written to a file it guessed at.
+
+Decline, and it prints the command to run yourself. Re-running the installer will not
+stack duplicates, and if `ldev` already resolves to a *different* checkout it says which
+one wins instead of appearing to fix it.
 
 Finally, confirm the whole stack:
 
@@ -346,6 +361,7 @@ instead.
 | `~/Library/Logs/ldev/` | you | access logs |
 | `/Library/LaunchDaemons/com.ldev.caddy.plist` | root | starts Caddy on 80/443 at boot |
 | system trust store | root | trusts the local CA, once |
+| your shell's startup file | you | one `PATH` line — only if you accept the prompt |
 
 Nothing is written anywhere else.
 
@@ -360,6 +376,7 @@ bash test/auto-root.test.sh      # hostname → folder, both layouts, on a real 
 bash test/standalone.test.sh     # new, standalone and render: config, ports, proxy blocks
 bash test/site-ports.test.sh     # the site/admin port allocator
 bash test/rehome.test.sh         # what rehome refuses to do to your site data
+bash test/path-setup.test.sh     # the right startup file and syntax per shell
 ```
 
 They skip gracefully when `caddy` is not on the `PATH`, or when a port they need is busy.
@@ -380,8 +397,10 @@ rm -rf ~/.config/ldev ~/Library/Logs/ldev   # config and the generated Caddyfile
 caddy untrust                    # optional: remove the local CA from the trust store
 ```
 
-Then remove the `conf-dir` line `install.sh` appended to
-`$(brew --prefix)/etc/dnsmasq.conf`, and drop `bin/` from your `PATH`.
+Then remove the two lines `install.sh` appended: the `conf-dir` line in
+`$(brew --prefix)/etc/dnsmasq.conf`, and — if you accepted the PATH prompt — the `# ldev`
+line and the one after it in your shell's startup file (`~/.zshrc`, `~/.bash_profile`,
+`~/.profile` or `~/.config/fish/config.fish`, whichever it named at the time).
 
 **Your site folders are never touched** — uninstalling stops them being served, and
 nothing more.

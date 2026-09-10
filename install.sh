@@ -288,7 +288,76 @@ else
   say "  sudo caddy run --config $CADDYFILE"
 fi
 
-# ---------------------------------------------------------------- 8. report
+# ---------------------------------------------------------------- 8. PATH
+
+step "PATH"
+
+# Which file, and which SYNTAX, depends on the shell, and guessing is worse than not
+# offering: a line appended to ~/.zshrc does nothing for a bash or fish user, who is then
+# told their PATH is set while their shell still cannot find ldev. Only shells whose
+# startup file and export syntax are known get an offer; anything else is printed for the
+# reader to place, because they know where their own config lives and this script does not.
+#
+# $SHELL is the LOGIN shell — what a new terminal window starts — which is the right
+# question here. The shell currently running this script is bash either way.
+shell_rc() {
+  case "${SHELL##*/}" in
+    zsh)  printf '%s' "$HOME/.zshrc" ;;
+    # macOS Terminal opens LOGIN shells, and a login bash reads .bash_profile and pointedly
+    # does NOT read .bashrc. Writing to .bashrc is the classic way to make this silently
+    # not work on a Mac.
+    bash) if [ -f "$HOME/.bash_profile" ]; then printf '%s' "$HOME/.bash_profile"
+          else printf '%s' "$HOME/.profile"; fi ;;
+    fish) printf '%s' "$HOME/.config/fish/config.fish" ;;
+    ksh)  printf '%s' "$HOME/.kshrc" ;;
+    *)    printf '' ;;
+  esac
+}
+
+# fish is not POSIX and `export PATH="...:$PATH"` is a syntax error in it. fish_add_path is
+# also idempotent, so re-running the installer cannot stack duplicates the way the export
+# line would.
+path_line() {
+  case "${SHELL##*/}" in
+    fish) printf 'fish_add_path %s' "$REPO_DIR/bin" ;;
+    *)    printf 'export PATH="%s:$PATH"' "$REPO_DIR/bin" ;;
+  esac
+}
+
+RC="$(shell_rc)"
+LINE="$(path_line)"
+FOUND="$(command -v ldev 2>/dev/null || true)"
+
+if [ "$FOUND" = "$REPO_DIR/bin/ldev" ]; then
+  say "Already on your PATH — ldev resolves to $FOUND."
+elif [ -n "$FOUND" ]; then
+  # A different checkout wins the name. Adding ours would not change that, since the
+  # existing entry comes first, so say which one answers rather than appearing to fix it.
+  warn "'ldev' already resolves to $FOUND, which is not this checkout."
+  say  "This one is $REPO_DIR/bin/ldev — call it by full path, or reorder your PATH."
+elif [ -z "$RC" ]; then
+  say "Shell '${SHELL##*/}' is not one this script knows how to edit."
+  say "Add $REPO_DIR/bin to your PATH in its startup file:"
+  say "  $LINE"
+elif [ -f "$RC" ] && grep -qF "$REPO_DIR/bin" "$RC"; then
+  say "$RC already adds it. Open a new terminal, or: source $RC"
+else
+  say "ldev lives in $REPO_DIR/bin, which is not on your PATH."
+  say "This would append to $RC:"
+  say ""
+  say "  $LINE"
+  say ""
+  if confirm "Add it?"; then
+    mkdir -p "$(dirname "$RC")"        # fish's config directory may not exist yet
+    printf '\n# ldev\n%s\n' "$LINE" >> "$RC"
+    say "added to $RC — run 'source $RC', or open a new terminal."
+  else
+    say "${YEL}Add it yourself:${R}"
+    say "  echo '$LINE' >> $RC"
+  fi
+fi
+
+# ---------------------------------------------------------------- 9. report
 
 step "Done"
 cat <<EOF
@@ -303,7 +372,6 @@ cat <<EOF
               $REPO_DIR/bin/ldev standalone <name>
 
   Check it:   $REPO_DIR/bin/ldev doctor
-  Add bin to your PATH:
-    echo 'export PATH="$REPO_DIR/bin:\$PATH"' >> ~/.zshrc
+              (or just 'ldev doctor', if the PATH step above added it)
 
 EOF
