@@ -124,6 +124,19 @@ say "  Dashboard    $DASHBOARD"
 say ""
 confirm "Proceed with these settings?" || die "aborted."
 
+# A previous install's ports are a DECISION, not a default. Somebody moves the admin port
+# off 2019 precisely because something else already holds it, and a re-install that resets
+# it to the built-in default re-creates the collision they fixed — silently, because a Caddy
+# that cannot bind its admin API exits at startup rather than warning.
+if [ -f "$CONFIG_FILE" ]; then
+  prev="$(sed -n 's/^ADMIN_PORT=//p' "$CONFIG_FILE" | head -1)"
+  [ -n "$prev" ] && ADMIN_PORT="$prev"
+  prev="$(sed -n 's/^ASK_PORT=//p' "$CONFIG_FILE" | head -1)"
+  [ -n "$prev" ] && ASK_PORT="$prev"
+  prev="$(sed -n 's/^SITE_PORT_BASE=//p' "$CONFIG_FILE" | head -1)"
+  [ -n "$prev" ] && SITE_PORT_BASE="$prev"
+fi
+
 # ---------------------------------------------------------------- 2. dependencies
 
 step "Dependencies"
@@ -227,27 +240,10 @@ else
   warn "no dashboard/ directory in this repo — the fallback will 404."
 fi
 
-# ---------------------------------------------------------------- 6. save the config
+# ---------------------------------------------------------------- 6. paths
 
-# Written BEFORE the server config, because `ldev render` reads it. That ordering is also
-# what makes a half-finished run recoverable: the config file is the thing every later step
-# and every later `ldev` command depends on, so it should survive a failure further down.
 CADDY_BIN="$(command -v caddy || echo "$BREW_PREFIX/bin/caddy")"
 CADDYFILE="$HOME/.config/ldev/Caddyfile"
-
-cat > "$CONFIG_FILE" <<EOF
-# ldev — written by install.sh on $(date '+%Y-%m-%d %H:%M:%S')
-TLD=$TLD
-SITES=$SITES
-PHP_FPM=$PHP_FPM
-DASHBOARD=$DASHBOARD
-ADMIN_PORT=$ADMIN_PORT
-SITE_PORT_BASE=$SITE_PORT_BASE
-ASK_PORT=$ASK_PORT
-LOGDIR=$LOGDIR
-REPO_DIR=$REPO_DIR
-EOF
-say "wrote $CONFIG_FILE"
 
 # ---------------------------------------------------------------- 7. server config
 
@@ -444,6 +440,48 @@ EOF
     say  "Stop whatever holds the port yourself, then re-run this installer."
   fi
 fi
+
+# The wildcard server's own two ports, chosen AFTER the takedown — before it, a port held
+# by the job about to be removed looks taken and would be skipped for no reason.
+#
+# Caddy binds its admin API at startup and EXITS if it cannot, without warning, so a
+# collision here is a server that never comes up and never says why. The site that hit this
+# was seasonal-drops, whose own Caddy holds 2019: the installer's default.
+free_port_from() {
+  local p="$1" n=0
+  while [ "$n" -lt 100 ]; do
+    port_busy "$p" || { printf '%s' "$p"; return 0; }
+    p=$((p + 1)); n=$((n + 1))
+  done
+  printf '%s' "$1"
+}
+
+new_admin="$(free_port_from "$ADMIN_PORT")"
+if [ "$new_admin" != "$ADMIN_PORT" ]; then
+  warn "admin port $ADMIN_PORT is already in use — using $new_admin instead."
+  ADMIN_PORT="$new_admin"
+fi
+new_ask="$(free_port_from "$ASK_PORT")"
+if [ "$new_ask" != "$ASK_PORT" ]; then
+  warn "ask port $ASK_PORT is already in use — using $new_ask instead."
+  ASK_PORT="$new_ask"
+fi
+
+# Written here rather than earlier because the ports above are only knowable now, and
+# `ldev render` two steps down reads this file for them.
+cat > "$CONFIG_FILE" <<EOF
+# ldev — written by install.sh on $(date '+%Y-%m-%d %H:%M:%S')
+TLD=$TLD
+SITES=$SITES
+PHP_FPM=$PHP_FPM
+DASHBOARD=$DASHBOARD
+ADMIN_PORT=$ADMIN_PORT
+SITE_PORT_BASE=$SITE_PORT_BASE
+ASK_PORT=$ASK_PORT
+LOGDIR=$LOGDIR
+REPO_DIR=$REPO_DIR
+EOF
+say "wrote $CONFIG_FILE (admin $ADMIN_PORT, ask $ASK_PORT)"
 
 # ---------------------------------------------------------------- 7b. server configuration
 
