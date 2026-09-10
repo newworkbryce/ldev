@@ -7,6 +7,7 @@
 #   ./install.sh --tld test --sites ~/Code --yes
 #   ./install.sh --skip-dns      leave /etc/resolver and dnsmasq alone
 #   ./install.sh --proxy-fallback yes   serve a proxied site's build when it is offline
+#   ./install.sh --plain         no menus, colour or emoji (same as NO_COLOR=1)
 #
 # Everything it writes is listed at the end, and every root-owned change is
 # announced before it happens.
@@ -30,26 +31,50 @@ LOGDIR="$HOME/Library/Logs/ldev"
 ASSUME_YES=0
 USE_DEFAULTS=0
 
-# ---------------------------------------------------------------- output helpers
+# Named once, because the review screen lists it before the install step writes it, and
+# the two must not be able to disagree about where it goes.
+DAEMON_LABEL="com.ldev.caddy"
+DAEMON_PLIST="/Library/LaunchDaemons/$DAEMON_LABEL.plist"
 
-if [ -t 1 ]; then
-  B=$'\033[1m'; DIM=$'\033[2m'; R=$'\033[0m'
-  GRN=$'\033[32m'; YEL=$'\033[33m'; RED=$'\033[31m'
-else
-  B=""; DIM=""; R=""; GRN=""; YEL=""; RED=""
-fi
+# ---------------------------------------------------------------- output helpers
+#
+# The installer draws through lib/tui.sh: arrow-key menus, colour, emoji, and a prompt
+# that is visibly a prompt. `say`, `step` and `warn` are kept as the names the rest of
+# this file already calls, so the logic below is untouched by the change in presentation
+# — there is one installer, not a pretty one and a plain one that drift apart.
+#
+# Everything degrades in one direction. No terminal, --plain, NO_COLOR or TERM=dumb and
+# every function still returns the answer it would have returned interactively.
+
+# shellcheck source=lib/tui.sh
+. "$REPO_DIR/lib/tui.sh"
+tui_init
+
+B="$C_B"; DIM="$C_DIM"; R="$C_R"
+GRN="$C_GRN"; YEL="$C_YEL"; RED="$C_RED"
 
 say()  { printf '%s\n' "$*"; }
-step() { printf '\n%s==>%s %s%s%s\n' "$GRN" "$R" "$B" "$*" "$R"; }
-warn() { printf '%s warning:%s %s\n' "$YEL" "$R" "$*" >&2; }
-die()  { printf '%s error:%s %s\n' "$RED" "$R" "$*" >&2; exit 1; }
+step() { ui_step "$G_GEAR" "$*"; }
+warn() { ui_warn "$*"; }
+die()  { printf '\n %s %s%s%s\n' "$G_NO" "$C_RED" "$*" "$C_R" >&2; exit 1; }
 
+# ask <prompt> <default> [hint] -> the answer in ANSWER; 1 at end of input.
+#
+# The answer arrives in a variable rather than on stdout, and callers must NOT wrap this
+# in $(...). Two reasons, both of which cost a working installer once: the prompt itself
+# is printed on stdout, so capturing the output captures the prompt as part of the answer
+# and every validation loop then rejects the value the user just typed; and a command
+# substitution is a subshell, so the end-of-input flag set inside it never reaches the
+# loop that has to stop when input runs out. That combination span at 100% CPU printing a
+# rejection tens of thousands of times, with every word of it swallowed by the capture.
+ANSWER=""
 ask() {
-  # ask <prompt> <default> -> echoes the answer
-  local prompt="$1" default="$2" reply=""
-  if [ "$USE_DEFAULTS" = 1 ] || [ ! -t 0 ]; then printf '%s' "$default"; return; fi
-  read -r -p "$prompt [$default]: " reply </dev/tty || true
-  printf '%s' "${reply:-$default}"
+  local rc=0
+  ANSWER="$2"
+  if [ "$USE_DEFAULTS" = 1 ]; then return 0; fi
+  tui_input "$1" "$2" "${3:-}" || rc=$?
+  ANSWER="$TUI_VALUE"
+  return "$rc"
 }
 
 # A prompt nobody can answer means NO.
@@ -64,12 +89,10 @@ ask() {
 # Failing closed costs an unattended run the optional extras (it prints what to run instead, which
 # every `else` branch here already does). `--yes` and `--defaults` still mean yes, explicitly, and
 # that is the difference: a person said so, rather than nobody being there to say otherwise.
-confirm() {
+confirm() { # confirm <question> [yes|no]
   [ "$ASSUME_YES" = 1 ] && return 0
-  [ -t 0 ] || return 1
-  local reply=""
-  read -r -p "$1 [y/N]: " reply </dev/tty || true
-  [[ "$reply" =~ ^[Yy] ]]
+  [ "$TUI_INTERACTIVE" = 1 ] || return 1
+  menu_confirm "$1" "${2:-no}"
 }
 
 # ---------------------------------------------------------------- arguments
@@ -87,6 +110,7 @@ while [ $# -gt 0 ]; do
     --proxy-fallback) PROXY_FALLBACK="${2:?--proxy-fallback needs yes or no}"; shift 2 ;;
     --skip-dns) SKIP_DNS=1; shift ;;
     --defaults) USE_DEFAULTS=1; ASSUME_YES=1; shift ;;
+    --plain)    LDEV_PLAIN=1; export LDEV_PLAIN; shift ;;
     -h|--help)  sed -n '3,$p' "$0" | sed -n '/^#/!q; s/^# \{0,1\}//p'; exit 0 ;;
     *)          die "unknown option: $1 (try --help)" ;;
   esac
@@ -98,24 +122,101 @@ done
 
 step "Configuration"
 
+valid_tld() { [[ "$1" =~ ^[a-z0-9-]+$ ]]; }
+
+# .dev and .app are real, HSTS-preloaded TLDs: browsers force HTTPS to the public
+# internet and your local site becomes unreachable in confusing ways. .local belongs
+# to mDNS/Bonjour and will fight with it.
+reserved_tld() {
+  case "$1" in com|net|org|dev|app|local|localhost) return 0 ;; esac
+  return 1
+}
+
+# Asked as a menu, then a validated prompt for anything else. Nearly everyone takes the
+# default, and an arrow-key list is both quicker and — the reason it is here — visibly a
+# question: a bare prompt line in a wall of install output does not read as one, and
+# people sit waiting at a question they never noticed was asked.
+edit_tld() {
+  local candidate
+  if [ "$TUI_INTERACTIVE" = 1 ]; then
+    menu_select "Which local TLD?" 0 \
+      "$G_BOLT .$TLD" "the default $G_DOT sites at https://<name>.$TLD" \
+      "$G_BOLT .test" "reserved by the IETF for exactly this, so it can never clash" \
+      "$G_PENCIL Type a different one…" "any single label of a-z, 0-9 and dashes" \
+      || die "aborted."
+    case "$MENU_CHOICE" in
+      0) return 0 ;;
+      1) TLD="test"; return 0 ;;
+    esac
+  fi
+  while :; do
+    ask "Local TLD" "$TLD" "one label, no dot — sites live at https://<name>.<tld>" \
+      || die "aborted — end of input while asking for the TLD."
+    candidate="${ANSWER#.}"                       # tolerate ".ldev"
+    if ! valid_tld "$candidate"; then
+      if [ "$TUI_INTERACTIVE" = 1 ]; then
+        ui_bad "'$candidate' is not one label of a-z, 0-9 and dashes."
+        continue
+      fi
+      die "TLD must be one label of a-z, 0-9 and dashes — got '$candidate'."
+    fi
+    if reserved_tld "$candidate"; then
+      warn "'$candidate' is a real or reserved TLD and will collide with public DNS or mDNS."
+      if confirm "Use '.$candidate' anyway?" "no"; then TLD="$candidate"; return 0; fi
+      [ "$TUI_INTERACTIVE" = 1 ] || die "aborted — pick something like 'ldev' or 'test'."
+      continue
+    fi
+    TLD="$candidate"
+    return 0
+  done
+}
+
+# The sites directory is nearly always one of a handful of places, so offer the ones that
+# exist and keep a free-text field for everyone else.
+edit_sites() {
+  if [ "$TUI_INTERACTIVE" != 1 ]; then
+    ask "Directory holding your sites" "$SITES" || die "aborted — end of input."
+    SITES="${ANSWER/#\~/$HOME}"
+    return 0
+  fi
+  local cands=() c existing seen args=()
+  for c in "$SITES" "$HOME/Sites" "$HOME/Code" "$HOME/Projects" "$HOME/Developer"; do
+    [ "$c" = "$SITES" ] || [ -d "$c" ] || continue
+    seen=0
+    for existing in "${cands[@]:-}"; do [ "$existing" = "$c" ] && seen=1; done
+    [ "$seen" = 1 ] || cands+=("$c")
+  done
+  for c in "${cands[@]}"; do
+    if [ -d "$c" ]; then
+      args+=("$G_FOLDER ${c/#$HOME/~}" "exists $G_DOT $(ls -1 "$c" 2>/dev/null | wc -l | tr -d ' ') entries")
+    else
+      args+=("$G_FOLDER ${c/#$HOME/~}" "will be created")
+    fi
+  done
+  args+=("$G_PENCIL Somewhere else…" "type a path")
+  menu_select "Where do your sites live?" 0 "${args[@]}" || die "aborted."
+  if [ "$MENU_CHOICE" -lt "${#cands[@]}" ]; then
+    SITES="${cands[$MENU_CHOICE]}"
+  else
+    ask "Directory holding your sites" "$SITES" || die "aborted — end of input."
+    SITES="$ANSWER"
+  fi
+  SITES="${SITES/#\~/$HOME}"
+  return 0
+}
+
 if [ "$USE_DEFAULTS" != 1 ]; then
-  TLD="$(ask "Local TLD (no dot)" "$TLD")"
-  SITES="$(ask "Directory holding your sites" "$SITES")"
+  edit_tld
+  edit_sites
 fi
 
 TLD="${TLD#.}"                                  # tolerate ".ldev"
 SITES="${SITES/#\~/$HOME}"                      # expand a typed ~
 
-[[ "$TLD" =~ ^[a-z0-9-]+$ ]] || die "TLD must be one label of a-z, 0-9 and dashes — got '$TLD'."
-case "$TLD" in
-  com|net|org|dev|app|local|localhost)
-    # .dev and .app are real, HSTS-preloaded TLDs: browsers force HTTPS to the
-    # public internet and your local site becomes unreachable in confusing ways.
-    # .local belongs to mDNS/Bonjour and will fight with it.
-    warn "'$TLD' is a real or reserved TLD and will collide with public DNS or mDNS."
-    confirm "Use '$TLD' anyway?" || die "aborted — pick something like 'ldev' or 'test'."
-    ;;
-esac
+valid_tld "$TLD" || die "TLD must be one label of a-z, 0-9 and dashes — got '$TLD'."
+if [ "$USE_DEFAULTS" = 1 ] && reserved_tld "$TLD"; then
+  warn "'$TLD' is a real or reserved TLD and will collide with public DNS or mDNS."
+fi
 
 # A proxied site — `ldev proxy <name> <port>` — points at a dev server the developer starts
 # and stops all day. The question is what to serve when it is NOT running.
@@ -128,18 +229,17 @@ if [ -z "$PROXY_FALLBACK" ]; then
   if [ "$USE_DEFAULTS" = 1 ]; then
     PROXY_FALLBACK="no"
   else
-    cat <<EOF
-
-When a proxied site's server is not running, ldev can either say so or serve that
-site's last build instead.
-
-  ${B}no${R}   show the proxy error. You always know the server is down.
-  ${B}yes${R}  serve the build. The URL keeps working, and can be silently stale.
-
-EOF
-    case "$(ask "Serve the build when a proxied site is offline? (yes/no)" "no")" in
-      y|yes|Y|YES) PROXY_FALLBACK="yes" ;;
-      *)           PROXY_FALLBACK="no" ;;
+    menu_select "When a proxied site's server is not running…" 0 \
+      "$G_WARN Show the proxy error" \
+"You always know the server is down.
+Honest, and occasionally exactly what you needed to know." \
+      "$G_FOLDER Serve that site's last build" \
+"The URL keeps working — and can show something
+arbitrarily stale while looking perfectly alive." \
+      || die "aborted."
+    case "$MENU_CHOICE" in
+      1) PROXY_FALLBACK="yes" ;;
+      *) PROXY_FALLBACK="no" ;;
     esac
   fi
 fi
@@ -150,14 +250,50 @@ esac
 
 DASHBOARD="$REPO_DIR/dashboard/dist"
 
-say ""
-say "  TLD          .$TLD"
-say "  Sites        $SITES"
-say "  PHP-FPM      $PHP_FPM"
-say "  Proxy fallback  $PROXY_FALLBACK  (serve a proxied site's build when it is offline)"
-say "  Dashboard    $DASHBOARD"
-say ""
-confirm "Proceed with these settings?" || die "aborted."
+# A review you can go back into, rather than a last chance to say no.
+#
+# Every answer is listed with what it will cause, and each one can be changed without
+# restarting the installer. Nothing has been written at this point, and quitting here
+# leaves the machine exactly as it was found.
+show_summary() {
+  printf '\n %s %s%s%s\n\n' "$G_LIST" "$C_B" "Review" "$C_R"
+  ui_kv "TLD"       ".$TLD"
+  ui_kv "Sites"     "$SITES"
+  ui_kv "PHP-FPM"   "$PHP_FPM"
+  ui_kv "Offline"   "$PROXY_FALLBACK  ${C_DIM}(what a proxied site serves when its server is down)$C_R"
+  ui_kv "Dashboard" "$DASHBOARD"
+  printf '\n %s%s%s\n\n' "$C_B" "What this will write" "$C_R"
+  ui_item "$CONFIG_FILE"
+  ui_item "$BREW_PREFIX/etc/dnsmasq.d/$TLD.conf"
+  [ "$SKIP_DNS" = 1 ] || ui_item "/etc/resolver/$TLD  ${C_DIM}(root)$C_R"
+  ui_item "$HOME/.config/ldev/Caddyfile"
+  ui_item "$DAEMON_PLIST  ${C_DIM}(root)$C_R"
+  printf '\n'
+}
+
+if [ "$TUI_INTERACTIVE" = 1 ]; then
+  while :; do
+    show_summary
+    menu_select "Ready?" 0 \
+      "$G_OK Install with these settings" "" \
+      "$G_PENCIL Change the TLD"             "currently .$TLD" \
+      "$G_PENCIL Change the sites directory" "currently $SITES" \
+      "$G_PENCIL Change the offline behaviour" "currently $PROXY_FALLBACK" \
+      "$G_NO Quit without changing anything" "" \
+      || die "aborted."
+    case "$MENU_CHOICE" in
+      0) break ;;
+      1) edit_tld ;;
+      2) edit_sites ;;
+      3) if menu_confirm "Serve a proxied site's last build when it is offline?" "no"; then
+           PROXY_FALLBACK="yes"; else PROXY_FALLBACK="no"; fi ;;
+      4) die "aborted — nothing was written." ;;
+    esac
+  done
+else
+  show_summary
+  confirm "Proceed with these settings?" "yes" || die "aborted."
+fi
 
 # A previous install's ports are a DECISION, not a default. Somebody moves the admin port
 # off 2019 precisely because something else already holds it, and a re-install that resets
@@ -180,12 +316,14 @@ step "Dependencies"
 
 command -v brew >/dev/null 2>&1 || die "Homebrew is required: https://brew.sh"
 
-# mkcert is no longer among these. It was here for the per-site mode, where every site
-# needed a certificate of its own; the wildcard server issues one per host from Caddy's
-# internal CA on first request, so nothing in a default install calls mkcert at all.
+# mkcert is here again, for a different reason than before. It used to be needed because
+# per-site mode issued a certificate per site by hand. That mode is gone — but the
+# wildcard server now signs its on-demand certificates with MKCERT's root rather than
+# minting a CA of its own, so the root has to exist. See the certificates step below.
 need=()
 command -v dnsmasq >/dev/null 2>&1 || need+=(dnsmasq)
 command -v caddy   >/dev/null 2>&1 || need+=(caddy)
+command -v mkcert  >/dev/null 2>&1 || need+=(mkcert)
 command -v php     >/dev/null 2>&1 || need+=(php)
 
 if [ ${#need[@]} -gt 0 ]; then
@@ -254,12 +392,40 @@ fi
 
 step "Certificates"
 
-# One certificate per host, issued from Caddy's own CA the first time that host is asked
-# for. Trusting the CA once is what makes every future site work with no certificate step.
-say "Each host gets its own certificate from Caddy's local CA, issued on first request."
-say "Trusting that CA (needs sudo, once):"
-if confirm "Install Caddy's local CA into the system trust store?"; then
-  caddy trust || warn "caddy trust failed — sites will load but show a warning."
+# One certificate per host, issued the first time that host is asked for — but signed by
+# MKCERT's root rather than by a CA Caddy mints for itself.
+#
+# The two ways to get a trusted local certificate pull in opposite directions. mkcert
+# issues per host, by hand, ahead of time, which cannot serve a hostname whose folder was
+# created a second ago. Caddy's own CA issues on demand but from a brand-new root that
+# every browser has to be taught to trust. Handing Caddy the mkcert root as its signing CA
+# takes the useful half of each: issuance stays on demand, so a folder is still a site,
+# and the chain ends at a root already in the System keychain.
+#
+# So there is no `caddy trust` step at all any more, and no browser-warning round when
+# migrating from a mkcert setup. Verified end to end: a client trusting only rootCA.pem
+# gets 200, with the leaf issued by "<ca name> - ECC Intermediate".
+MKCERT_ROOT="$(mkcert -CAROOT 2>/dev/null || true)"
+if [ -n "$MKCERT_ROOT" ] && [ -f "$MKCERT_ROOT/rootCA.pem" ] && [ -f "$MKCERT_ROOT/rootCA-key.pem" ]; then
+  ui_ok "signing with the mkcert root already trusted on this machine"
+  ui_hint "$MKCERT_ROOT/rootCA.pem"
+  ui_hint "Each host still gets its own certificate on first request."
+else
+  # Without the root there is nothing to sign with, and Caddy fails at startup on a pki
+  # block pointing at files that are not there. Better to say so now than at bootstrap.
+  warn "mkcert has no root CA yet, and the server signs with it."
+  ui_hint "mkcert -install creates it and adds it to the System keychain (sudo, once)."
+  if confirm "Run mkcert -install now?" "yes"; then
+    if mkcert -install; then
+      MKCERT_ROOT="$(mkcert -CAROOT 2>/dev/null || true)"
+      ui_ok "mkcert root created and trusted"
+    else
+      warn "mkcert -install failed — the server will not start until its root exists."
+    fi
+  else
+    ui_skip "no mkcert root — Caddy will fail to start with the generated config"
+    ui_cmd "mkcert -install"
+  fi
 fi
 
 # ---------------------------------------------------------------- 5. dashboard
@@ -543,6 +709,7 @@ render() {
       -e "s|__SITES__|$SITES|g" \
       -e "s|__DASHBOARD__|$DASHBOARD|g" \
       -e "s|__PHP_FPM__|$PHP_FPM|g" \
+      -e "s|__MKCERT_ROOT__|$MKCERT_ROOT|g" \
       -e "s|__ADMIN_PORT__|$ADMIN_PORT|g" \
       -e "s|__ASK_PORT__|$ASK_PORT|g" \
       -e "s|__LOGDIR__|$LOGDIR|g" \
@@ -561,7 +728,7 @@ render() {
 say ""
 say "Ports 80 and 443 are privileged, so Caddy needs to start via launchd as root."
 if confirm "Install and start the ldev launchd service?"; then
-  PLIST=/Library/LaunchDaemons/com.ldev.caddy.plist
+  PLIST="$DAEMON_PLIST"
   render "$REPO_DIR/templates/com.ldev.caddy.plist.tmpl" | sudo tee "$PLIST" >/dev/null
   sudo chown root:wheel "$PLIST"; sudo chmod 644 "$PLIST"
   sudo launchctl bootout system/com.ldev.caddy 2>/dev/null || true

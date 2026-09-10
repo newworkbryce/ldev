@@ -69,10 +69,19 @@ cd ldev
 ./install.sh
 ```
 
-The installer asks four things — **TLD**, **sites directory**, what a
-[proxied site](#a-site-that-is-already-running-somewhere) should do when its server is down,
-and whether to make the root-owned changes for you — then does the rest. There is no serving
-mode to choose.
+The installer is a small terminal UI: **↑↓** to move, **enter** to choose, **1-9** to jump
+straight to an option, **esc** to back out. Each choice explains itself as you highlight it,
+and every question is visibly a question rather than another line of progress.
+
+It asks three things — **TLD**, **sites directory**, and what a
+[proxied site](#a-site-that-is-already-running-somewhere) should do when its server is down —
+then shows a **review screen** listing every setting and every path it is about to write,
+root-owned ones marked. You can go back into any answer from there, or quit without a byte
+being written. There is no serving mode to choose.
+
+Only then does it touch anything: dependencies, DNS, certificates, the server config and
+the launchd service, each announcing any root-owned change before making it and printing the
+command to run by hand if you decline.
 
 Non-interactive:
 
@@ -81,6 +90,11 @@ Non-interactive:
 ./install.sh --defaults
 ```
 
+With no terminal — a pipe, a script, `--plain`, or `NO_COLOR` — the menus, colour and
+emoji fall away and every question takes the same answer it would have shown you. Optional
+root-owned steps then **fail closed**: they are skipped, with the commands printed, unless
+you passed `--yes` or `--defaults`.
+
 | Flag | Effect |
 |---|---|
 | `--tld <name>` | The TLD, one label, no dot. Default `ldev`. |
@@ -88,6 +102,7 @@ Non-interactive:
 | `--php-fpm <host:port>` | PHP-FPM address. Default `127.0.0.1:9000`. |
 | `--proxy-fallback yes\|no` | Serve a proxied site's last build when its server is down. Asked if omitted. |
 | `--skip-dns` | Leave `/etc/resolver` and dnsmasq alone. |
+| `--plain` | No menus, colour or emoji. Same as `NO_COLOR=1`. |
 | `--yes`, `-y` | Answer yes to every confirmation. |
 | `--defaults` | Accept every default and prompt for nothing. |
 
@@ -346,12 +361,20 @@ length, and is the authoritative description of the routing.
 
 `dashboard/` is a React + PHP app listing local projects with their name, URL, port and
 platform, and detecting WordPress installs by reading `WP_HOME` from `wp-config.php`. It
-is what an unknown hostname falls back to, and it lives at:
+is where an unknown hostname sends you, and it lives at:
 
 ```
-https://ldev/            # the bare TLD
-http://localhost/        # and here, no certificate needed
+https://sites.ldev/          # its address
+http://sites.localhost/      # and here, no certificate needed
 ```
+
+`https://ldev/` and `http://localhost/` still work — they redirect. So does any hostname
+with no folder behind it, which **redirects** rather than rendering the dashboard in place:
+otherwise every typo would draw the dashboard under the typo's own name, and the address
+bar would go on claiming a site exists at a name that has nothing behind it.
+
+One consequence worth knowing: a folder literally named `sites` is shadowed by this, since
+`sites.ldev` is matched before the wildcard. `ldev list` still shows it.
 
 Its Sites directory and TLD are configurable in **Settings**, and its config lives outside
 the repo so a rebuild never overwrites it. To rebuild it after a change:
@@ -409,6 +432,7 @@ fixes whatever failed. The common ones:
 | 🧱 A site's own server "does not start" | Two sites sharing an admin port — the second exits silently | [docs/standalone-sites.md](docs/standalone-sites.md) |
 | 🔁 A site's own server runs, but its URL still hits the dashboard | No proxy block for it yet | `ldev apply` |
 | ↩️ A WordPress site redirects to `:8443` | `WP_HOME`/`WP_SITEURL` still name the old ported URL | `ldev rehome <name>` |
+| 🕳️ Every URL returns `000`, nothing in any log | Two servers live at once — one holding 80, another holding 443, and whatever holds 443 has no site for that host | Re-run `./install.sh`; it finds the other one and offers to take it down |
 
 Logs are in `~/Library/Logs/ldev/`.
 
@@ -442,6 +466,7 @@ Plain bash, no framework. Each script sets up a throwaway tree, asserts, and cle
 
 ```sh
 bash test/auto-root.test.sh      # hostname → folder, both layouts, on a real Caddy
+bash test/tui-menu.test.sh       # the installer's menus and its whole question phase
 bash test/standalone.test.sh     # new, standalone and render: config, ports, proxy blocks
 bash test/site-ports.test.sh     # the site/admin port allocator
 bash test/rehome.test.sh         # what rehome refuses to do to your site data
@@ -453,6 +478,14 @@ bash test/update.test.sh         # migrating an older config without reinstallin
 ```
 
 They skip gracefully when `caddy` is not on the `PATH`, or when a port they need is busy.
+
+`tui-menu.test.sh` drives the installer with a file of keystrokes in place of a keyboard,
+so the arrow keys, the review screen and the abort paths are all exercised without a
+terminal. Every run of `install.sh` inside it is pointed at a throwaway `HOME` and empty
+stand-ins for the launchd directories, and `sudo`, `brew`, `launchctl`, `caddy`, `mkcert`
+and `npm` are shadowed by stubs that record any attempt to a tripwire file — so "it needed
+no sudo" is asserted rather than assumed. It runs under `/bin/bash`, which on macOS is
+3.2, because the installer has to work before you have installed anything else.
 
 ---
 
@@ -485,10 +518,14 @@ Both are `./install.sh`, which is still the right tool for a change that needs `
 
 ## 🧹 Uninstall
 
-The reverse of the table above, in order:
+The reverse of the table above, in order. Note the `launchctl enable`: launchd keeps a
+per-label *disabled* record that survives both `bootout` and deleting the plist, so
+without it a later reinstall fails with `Bootstrap failed: 5: Input/output error` —
+which mentions neither the label nor the word "disabled".
 
 ```sh
 sudo launchctl bootout system/com.ldev.caddy
+sudo launchctl enable system/com.ldev.caddy   # or the next install fails, opaquely
 sudo rm -f /Library/LaunchDaemons/com.ldev.caddy.plist
 sudo rm -f /etc/resolver/ldev
 rm -f "$(brew --prefix)/etc/dnsmasq.d/ldev.conf"

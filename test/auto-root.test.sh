@@ -27,13 +27,19 @@ echo DASHBOARD   > "$DASH/index.html"
 pass=0; fail=0
 check() { if [ "$2" = "$3" ]; then echo "  ok   $1 -> $2"; pass=$((pass+1)); else echo "  FAIL $1: got '$2' want '$3'"; fail=$((fail+1)); fi; }
 
+# Both splice points have to be filled, or the placeholder survives into the rendered file
+# and Caddy reads it as a site address. Neither is exercised here: no proxied sites, and no
+# pki block, which is the same shape a machine without mkcert renders — so this test needs
+# mkcert no more than that machine does.
 : > "$TMP/blocks"
+: > "$TMP/ca"
 
 sed -e "s|__TLD__|ldev|g" -e "s|__SITES__|$SITES|g" -e "s|__DASHBOARD__|$DASH|g" \
     -e "s|__PHP_FPM__|127.0.0.1:9000|g" -e "s|__ADMIN_PORT__|12019|g" \
     -e "s|__ASK_PORT__|12018|g" -e "s|__LOGDIR__|$TMP/logs|g" \
     "$REPO/templates/Caddyfile.tmpl" \
   | awk -v f="$TMP/blocks" '$0 == "__PROXY_SITES__" { while ((getline line < f) > 0) print line; next } { print }' \
+  | awk -v f="$TMP/ca" '$0 == "__LOCAL_CA__" { while ((getline line < f) > 0) print line; next } { print }' \
   > "$TMP/Caddyfile"
 
 if grep -q '__[A-Z_]*__' "$TMP/Caddyfile"; then
@@ -55,16 +61,29 @@ fi
 # with a real ldev Caddy, no automatic HTTPS, and each site address rewritten to :$PORT.
 mkdir -p "$TMP/serve"
 awk -v port="$PORT" '
+  # Drop the TLS machinery: this server is plain HTTP on a high port.
+  #
+  # Depth-counted, not "skip to the next closing brace". A tls block now nests an
+  # `issuer internal { ... }` inside it, and stopping at the first `}` ended the skip
+  # one level too early — the rest of the block leaked through, the braces stopped
+  # balancing, and a `root` line further down was read as a site address.
   /^\tlocal_certs$/                 { next }
-  /^\ton_demand_tls \{$/            { skip = 1; next }
-  /^\t\ttls \{$/                    { skip = 1; next }
-  /^\ttls \{$/                      { skip = 1; next }
-  skip && /^\t*\}$/                 { skip = 0; next }
-  skip                              { next }
+  /^\tpki \{$/                      { skip = 1; depth = 1; next }
+  /^\ton_demand_tls \{$/            { skip = 1; depth = 1; next }
+  /^\t\ttls \{$/                    { skip = 1; depth = 1; next }
+  /^\ttls \{$/                      { skip = 1; depth = 1; next }
+  skip {
+    n = gsub(/\{/, "{"); depth += n
+    n = gsub(/\}/, "}"); depth -= n
+    if (depth <= 0) skip = 0
+    next
+  }
   /^\tadmin localhost:/             { print "\tadmin off"; print "\tauto_https off"; next }
   /^\*\.ldev \{$/                   { print "http://*.ldev:" port " {"; next }
+  /^sites\.ldev \{$/                { print "http://sites.ldev:" port " {"; next }
   /^ldev \{$/                       { print "http://ldev:" port " {"; next }
   /^http:\/\/\*\.localhost \{$/     { print "http://*.localhost:" port " {"; next }
+  /^http:\/\/sites\.localhost \{$/  { print "http://sites.localhost:" port " {"; next }
   /^http:\/\/localhost \{$/         { print "http://localhost:" port " {"; next }
   { print }
 ' "$TMP/Caddyfile" > "$TMP/serve/Caddyfile"
@@ -93,8 +112,12 @@ get() { curl -s --max-time 5 -H "Host: $1" "http://127.0.0.1:$PORT/"; }
 check "plain folder"            "$(get shop.ldev)"       "PLAIN-SHOP"
 check "folder named the old way" "$(get blog.ldev)"      "OLD-BLOG"
 check "plain wins over old"     "$(get both.ldev)"       "PLAIN-BOTH"
-check "unknown host"            "$(get nothing.ldev)"    "DASHBOARD"
-check "bare TLD is the dashboard" "$(get ldev)"          "DASHBOARD"
+# The dashboard has one address, and everything that used to answer with it now points
+# there — so a typo cannot leave the address bar claiming a site exists at that name.
+where() { curl -s -o /dev/null -w '%{redirect_url}' --max-time 5 -H "Host: $1" "http://127.0.0.1:$PORT/"; }
+check "sites.<tld> IS the dashboard" "$(get sites.ldev)"  "DASHBOARD"
+check "unknown host redirects there"  "$(where nothing.ldev)" "https://sites.ldev/"
+check "bare TLD redirects there"      "$(where ldev)"         "https://sites.ldev/"
 
 # The .localhost origin must agree with the TLD origin about which folder a name means.
 check ".localhost plain"        "$(get shop.localhost)"  "PLAIN-SHOP"

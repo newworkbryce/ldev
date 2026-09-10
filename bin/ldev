@@ -772,12 +772,27 @@ cmd_render() {
   # Two passes: sed for the scalar placeholders, then awk to splice in the generated blocks.
   # sed cannot do the second — a multi-line replacement through `s|__PROXY_SITES__|...|` has
   # to escape every newline and backslash in the payload, and the payload is generated.
+  # Certificates are signed by mkcert's root when there is one, so the machine's existing
+  # trust carries over and nothing new has to be trusted. Ask mkcert where its CA lives
+  # rather than reading a path from the saved config: mkcert is the authority on that, and
+  # a stale path fails at startup rather than here.
+  local mkcert_root ca_block; ca_block="$(mktemp -t ldev-ca)"
+  mkcert_root="$(mkcert -CAROOT 2>/dev/null || true)"
+  if [ -n "$mkcert_root" ] && [ -f "$mkcert_root/rootCA.pem" ] && [ -f "$mkcert_root/rootCA-key.pem" ]; then
+    printf '\tpki {\n\t\tca local {\n\t\t\tname "ldev local CA (mkcert root)"\n\t\t\troot {\n\t\t\t\tcert "%s/rootCA.pem"\n\t\t\t\tkey "%s/rootCA-key.pem"\n\t\t\t}\n\t\t}\n\t}\n' \
+      "$mkcert_root" "$mkcert_root" > "$ca_block"
+  else
+    : > "$ca_block"
+  fi
+
   sed -e "s|__TLD__|$TLD|g" -e "s|__SITES__|$SITES|g" -e "s|__DASHBOARD__|$DASHBOARD|g" \
       -e "s|__PHP_FPM__|$PHP_FPM|g" -e "s|__ADMIN_PORT__|$ADMIN_PORT|g" \
       -e "s|__ASK_PORT__|$ASK_PORT|g" -e "s|__LOGDIR__|$LOGDIR|g" \
       "$REPO_DIR/templates/Caddyfile.tmpl" \
     | awk -v f="$blocks" '$0 == "__PROXY_SITES__" { while ((getline line < f) > 0) print line; next } { print }' \
+    | awk -v f="$ca_block" '$0 == "__LOCAL_CA__" { while ((getline line < f) > 0) print line; next } { print }' \
     > "$CADDYFILE"
+  rm -f "$ca_block"
 
   local n; n="$(site_servers | grep -c . || true)"
   echo "wrote $CADDYFILE ($n site(s) with their own server, proxied)"

@@ -25,12 +25,37 @@
 {
 	admin localhost:__ADMIN_PORT__
 
-	# Caddy's own CA, kept on this machine. Each host gets its own certificate the
-	# first time it is requested, which is why no wildcard certificate is needed —
-	# and a wildcard is exactly what does NOT work here. mkcert's *.__TLD__ file
-	# carries specific SANs and browsers reject it for <name>.__TLD__ with
-	# ERR_CERT_COMMON_NAME_INVALID. Per-host issuance sidesteps that entirely.
-	local_certs
+	# Each host gets its own certificate the first time it is requested, which is why
+	# no wildcard certificate is needed — and a wildcard is exactly what does NOT work
+	# here. A *.__TLD__ file carries specific SANs and browsers reject it for
+	# <name>.__TLD__ with ERR_CERT_COMMON_NAME_INVALID. Per-host issuance sidesteps it.
+	#
+	# Those certificates are signed by MKCERT's root, not by a CA of Caddy's own. The
+	# two ways to get a trusted local certificate pull in opposite directions: mkcert
+	# issues per host, by hand, ahead of time — which cannot serve a hostname whose
+	# folder was created a second ago — while Caddy's `local_certs` issues on demand
+	# but from a brand-new root that every browser must be taught to trust.
+	#
+	# Handing Caddy the mkcert root as its signing CA takes the useful half of each:
+	# issuance stays on demand, so a folder is still a site, and the chain ends at a
+	# root already in the System keychain, so nothing new has to be trusted and
+	# `caddy trust` is not needed at all. Verified: a client trusting only
+	# rootCA.pem gets 200, with the leaf issued by "<ca name> - ECC Intermediate".
+	#
+	# The key is readable only by its owner, and this server runs as root, so it can
+	# read it. If mkcert has never been run there is no root to point at, and Caddy
+	# fails at startup rather than quietly falling back — install.sh checks first.
+	# Spliced in by `ldev render`: a pki block redefining the "local" CA to use mkcert's
+	# root, or nothing at all when mkcert has none. It has to be conditional, because a
+	# pki block naming files that do not exist is not a config Caddy will start with —
+	# it fails at provision time, which `caddy validate` also performs, so the failure
+	# is a rendered config that cannot even be checked.
+	#
+	# Leaving it out is a working fallback rather than a broken one: "local" is Caddy's
+	# own built-in CA id, so `issuer internal { ca local }` below resolves either way.
+	# Without mkcert you get Caddy's self-made root and one `caddy trust`; with it, a
+	# root the System keychain already holds.
+__LOCAL_CA__
 
 	# Caddy refuses on-demand issuance without an ask endpoint, so that a public
 	# instance cannot be made to mint certificates for arbitrary hostnames. Here
@@ -69,6 +94,11 @@ __PROXY_SITES__
 	bind 127.0.0.1 ::1
 
 	tls {
+		# Signed by the mkcert root defined in the pki block above, not by a CA of
+		# Caddy's own — so the chain ends at a root the System keychain already has.
+		issuer internal {
+			ca local
+		}
 		on_demand
 	}
 
@@ -114,12 +144,14 @@ __PROXY_SITES__
 		file_server browse
 	}
 
-	# No directory for this hostname — hand it to the dashboard rather than a 404,
-	# so an unrecognised name tells you what IS configured.
+	# No directory for this hostname — send it to the dashboard rather than a 404, so an
+	# unrecognised name tells you what IS configured.
+	#
+	# A redirect rather than serving the dashboard inline: otherwise every typo renders
+	# the dashboard under the typo's own hostname, and the address bar goes on claiming a
+	# site exists at a name that has nothing behind it.
 	handle {
-		root * __DASHBOARD__
-		php_fastcgi __PHP_FPM__
-		file_server
+		redir https://sites.__TLD__{uri}
 	}
 
 	log {
@@ -176,15 +208,16 @@ http://*.localhost {
 		file_server browse
 	}
 
+	# Same as the TLD side: an unknown name goes to the dashboard's own address. Kept on
+	# http and on .localhost, because the whole point of this origin is that it works in a
+	# browser that will not touch a custom TLD or a private certificate.
 	handle {
-		root * __DASHBOARD__
-		php_fastcgi __PHP_FPM__
-		file_server
+		redir http://sites.localhost{uri}
 	}
 }
 
-# Bare http://localhost is the dashboard too.
-http://localhost {
+# The dashboard's .localhost address, and the bare one redirecting to it.
+http://sites.localhost {
 	bind 127.0.0.1 ::1
 	root * __DASHBOARD__
 	encode gzip
@@ -192,14 +225,47 @@ http://localhost {
 	file_server
 }
 
-# The bare TLD (http://__TLD__) is the dashboard's own address.
-__TLD__ {
+http://localhost {
+	bind 127.0.0.1 ::1
+	redir http://sites.localhost{uri} permanent
+}
+
+# sites.__TLD__ is the dashboard's address.
+#
+# It has a name rather than living on the bare TLD because a bare single-label host is an
+# awkward thing to own: browsers treat it as a search term as often as a hostname, and it
+# is the one name in the TLD that cannot also be a site. Everything else that used to
+# answer with the dashboard now redirects here, so the dashboard has one URL worth
+# bookmarking instead of appearing at whatever wrong address you happened to type.
+#
+# This block is more specific than *.__TLD__, so Caddy matches it first — which also means
+# a directory literally named "sites" is shadowed by it. That is the trade for giving the
+# dashboard a stable name; `ldev list` still shows the folder.
+sites.__TLD__ {
 	bind 127.0.0.1 ::1
 	tls {
+		# Signed by the mkcert root defined in the pki block above, not by a CA of
+		# Caddy's own — so the chain ends at a root the System keychain already has.
+		issuer internal {
+			ca local
+		}
 		on_demand
 	}
 	root * __DASHBOARD__
 	encode gzip
 	php_fastcgi __PHP_FPM__
 	file_server
+}
+
+# The bare TLD keeps working, as a redirect. Anyone who has http://__TLD__ bookmarked, or
+# types it out of habit, lands on the dashboard's real name rather than a dead end.
+__TLD__ {
+	bind 127.0.0.1 ::1
+	tls {
+		issuer internal {
+			ca local
+		}
+		on_demand
+	}
+	redir https://sites.__TLD__{uri} permanent
 }
