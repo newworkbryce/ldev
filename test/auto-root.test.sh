@@ -27,8 +27,18 @@ echo DASHBOARD   > "$DASH/index.html"
 pass=0; fail=0
 check() { if [ "$2" = "$3" ]; then echo "  ok   $1 -> $2"; pass=$((pass+1)); else echo "  FAIL $1: got '$2' want '$3'"; fail=$((fail+1)); fi; }
 
+# Auto mode signs its on-demand certificates with mkcert's root, so the template carries
+# that path. Without mkcert there is no root to point at and Caddy refuses the config at
+# provision time — which is a missing tool, not a broken template, so skip rather than fail.
+MKROOT="$(mkcert -CAROOT 2>/dev/null || true)"
+if [ -z "$MKROOT" ] || [ ! -f "$MKROOT/rootCA.pem" ]; then
+  echo "  skip everything (mkcert has no root CA on this machine)"
+  rm -rf "$TMP"; echo; echo "passed=$pass failed=$fail"; exit 0
+fi
+
 sed -e "s|__TLD__|ldev|g" -e "s|__SITES__|$SITES|g" -e "s|__DASHBOARD__|$DASH|g" \
     -e "s|__PHP_FPM__|127.0.0.1:9000|g" -e "s|__ADMIN_PORT__|12019|g" \
+    -e "s|__MKCERT_ROOT__|$MKROOT|g" \
     -e "s|__ASK_PORT__|12018|g" -e "s|__LOGDIR__|$TMP/logs|g" \
     "$REPO/templates/Caddyfile.auto.tmpl" > "$TMP/Caddyfile"
 
@@ -51,12 +61,23 @@ fi
 # with a real ldev Caddy, no automatic HTTPS, and each site address rewritten to :$PORT.
 mkdir -p "$TMP/serve"
 awk -v port="$PORT" '
+  # Drop the TLS machinery: this server is plain HTTP on a high port.
+  #
+  # Depth-counted, not "skip to the next closing brace". A tls block now nests an
+  # `issuer internal { ... }` inside it, and stopping at the first `}` ended the skip
+  # one level too early — the rest of the block leaked through, the braces stopped
+  # balancing, and a `root` line further down was read as a site address.
   /^\tlocal_certs$/                 { next }
-  /^\ton_demand_tls \{$/            { skip = 1; next }
-  /^\t\ttls \{$/                    { skip = 1; next }
-  /^\ttls \{$/                      { skip = 1; next }
-  skip && /^\t*\}$/                 { skip = 0; next }
-  skip                              { next }
+  /^\tpki \{$/                      { skip = 1; depth = 1; next }
+  /^\ton_demand_tls \{$/            { skip = 1; depth = 1; next }
+  /^\t\ttls \{$/                    { skip = 1; depth = 1; next }
+  /^\ttls \{$/                      { skip = 1; depth = 1; next }
+  skip {
+    n = gsub(/\{/, "{"); depth += n
+    n = gsub(/\}/, "}"); depth -= n
+    if (depth <= 0) skip = 0
+    next
+  }
   /^\tadmin localhost:/             { print "\tadmin off"; print "\tauto_https off"; next }
   /^\*\.ldev \{$/                   { print "http://*.ldev:" port " {"; next }
   /^ldev \{$/                       { print "http://ldev:" port " {"; next }

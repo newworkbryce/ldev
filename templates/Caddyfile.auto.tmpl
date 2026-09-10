@@ -14,12 +14,35 @@
 {
 	admin localhost:__ADMIN_PORT__
 
-	# Caddy's own CA, kept on this machine. Each host gets its own certificate the
-	# first time it is requested, which is why no wildcard certificate is needed —
-	# and a wildcard is exactly what does NOT work here. mkcert's *.__TLD__ file
-	# carries specific SANs and browsers reject it for <name>.__TLD__ with
-	# ERR_CERT_COMMON_NAME_INVALID. Per-host issuance sidesteps that entirely.
-	local_certs
+	# Each host gets its own certificate the first time it is requested, which is why
+	# no wildcard certificate is needed — and a wildcard is exactly what does NOT work
+	# here. A *.__TLD__ file carries specific SANs and browsers reject it for
+	# <name>.__TLD__ with ERR_CERT_COMMON_NAME_INVALID. Per-host issuance sidesteps it.
+	#
+	# Those certificates are signed by MKCERT's root, not by a CA of Caddy's own. The
+	# two ways to get a trusted local certificate pull in opposite directions: mkcert
+	# issues per host, by hand, ahead of time — which cannot serve a hostname whose
+	# folder was created a second ago — while Caddy's `local_certs` issues on demand
+	# but from a brand-new root that every browser must be taught to trust.
+	#
+	# Handing Caddy the mkcert root as its signing CA takes the useful half of each:
+	# issuance stays on demand, so a folder is still a site, and the chain ends at a
+	# root already in the System keychain, so nothing new has to be trusted and
+	# `caddy trust` is not needed at all. Verified: a client trusting only
+	# rootCA.pem gets 200, with the leaf issued by "<ca name> - ECC Intermediate".
+	#
+	# The key is readable only by its owner, and this server runs as root, so it can
+	# read it. If mkcert has never been run, __MKCERT_ROOT__ does not exist and Caddy
+	# fails at startup rather than quietly falling back — install.sh checks first.
+	pki {
+		ca local {
+			name "ldev local CA (mkcert root)"
+			root {
+				cert "__MKCERT_ROOT__/rootCA.pem"
+				key "__MKCERT_ROOT__/rootCA-key.pem"
+			}
+		}
+	}
 
 	# Caddy refuses on-demand issuance without an ask endpoint, so that a public
 	# instance cannot be made to mint certificates for arbitrary hostnames. Here
@@ -51,6 +74,11 @@ http://127.0.0.1:__ASK_PORT__ {
 	bind 127.0.0.1 ::1
 
 	tls {
+		# Signed by the mkcert root defined in the pki block above, not by a CA of
+		# Caddy's own — so the chain ends at a root the System keychain already has.
+		issuer internal {
+			ca local
+		}
 		on_demand
 	}
 
@@ -178,6 +206,11 @@ http://localhost {
 __TLD__ {
 	bind 127.0.0.1 ::1
 	tls {
+		# Signed by the mkcert root defined in the pki block above, not by a CA of
+		# Caddy's own — so the chain ends at a root the System keychain already has.
+		issuer internal {
+			ca local
+		}
 		on_demand
 	}
 	root * __DASHBOARD__

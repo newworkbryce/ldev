@@ -969,15 +969,31 @@ ui_step "$G_LOCK" "Certificates"
 if [ "$MODE" = "auto" ]; then
   # Caddy's internal CA issues per-host certs on demand; mkcert's CA is still
   # installed so anything issued by hand is trusted too.
-  # Deferred on purpose — see TRUST_CA below. The CA cannot be fetched from a server
-  # that has not started yet, so only the permission is taken here.
-  ui_info "Mode 'auto' issues a certificate per host from Caddy's own CA."
-  ui_hint "Trusting it happens after the service starts, since the CA comes from it."
-  if confirm "Trust Caddy's local CA in the system store? (sudo, once)" "yes"; then
-    TRUST_CA=1
+  # Auto mode signs on-demand certificates with MKCERT's root, so the chain ends at a
+  # CA the System keychain already holds. That means there is nothing new to trust —
+  # no `caddy trust`, no browser warning — provided mkcert has actually been set up.
+  MKCERT_ROOT="$(mkcert -CAROOT 2>/dev/null || true)"
+  TRUST_CA=0
+  if [ -n "$MKCERT_ROOT" ] && [ -f "$MKCERT_ROOT/rootCA.pem" ] && [ -f "$MKCERT_ROOT/rootCA-key.pem" ]; then
+    ui_ok "signing with the mkcert root already trusted on this machine"
+    ui_hint "$MKCERT_ROOT/rootCA.pem"
+    ui_hint "Each host still gets its own certificate on first request."
   else
-    TRUST_CA=0
-    ui_skip "untrusted CA — browsers will warn on every ldev site"
+    # Without the root there is nothing to sign with, and Caddy would fail at startup
+    # on a pki block pointing at files that are not there. Better to say so now.
+    ui_warn "mkcert has no root CA yet, and auto mode signs with it."
+    ui_hint "mkcert -install creates it and adds it to the System keychain (sudo, once)."
+    if confirm "Run mkcert -install now?" "yes"; then
+      if mkcert -install; then
+        MKCERT_ROOT="$(mkcert -CAROOT 2>/dev/null || true)"
+        ui_ok "mkcert root created and trusted"
+      else
+        ui_warn "mkcert -install failed — the server will not start until its root exists."
+      fi
+    else
+      ui_skip "no mkcert root — Caddy will fail to start with the generated config"
+      ui_cmd "mkcert -install"
+    fi
   fi
 else
   ui_info "mkcert issues the per-site certificates in mode '$MODE'."
@@ -1027,26 +1043,37 @@ CADDYFILE="$HOME/.config/ldev/Caddyfile"
 # ports, and allocating around only what is listening hands out a pair that collides the
 # moment it starts again. This is the reasoning bin/ldev's persite allocator already uses;
 # it is duplicated rather than shared because bin/ldev is being rewritten elsewhere.
-# Trust OUR Caddy's CA — named explicitly, and only once it exists.
+# Is the certificate this server hands out actually trusted here? Asked WITHOUT -k.
 #
-# `caddy trust` fetches the root from a Caddy admin API and defaults to localhost:2019.
-# With no --address, on a machine where 2019 belongs to a different Caddy, it installs
-# THAT server's root and reports success. Observed exactly that: the log said
-# "certificate installed properly in macOS keychain" while the daemon's own root stayed
-# untrusted, and because both roots carry the CN "Caddy Local Authority" the keychain
-# showed two identical-looking entries with the wrong one trusted. The symptom is easy to
-# misread — every host answers under `curl -k`, and plain `curl` returns 000 with "unable
-# to get local issuer certificate". The chain was never the problem; the trusted root was.
+# There is no `caddy trust` step any more: auto mode signs with the mkcert root, which
+# the System keychain already holds. That removes the failure this replaced but does not
+# prove the result, and the failure it replaced was invisible in exactly this way. On a
+# machine where another Caddy owned 2019, `caddy trust` with no --address fetched and
+# installed THAT server's root and reported success; both roots carry the CN "Caddy Local
+# Authority", so the keychain showed two identical-looking entries with the wrong one
+# trusted. Every host answered under `curl -k` and returned 000 under plain `curl` with
+# "unable to get local issuer certificate" — a chain that was never broken, above a
+# trusted root that was the wrong one.
 #
-# It also has to run AFTER the daemon is up: before that there is nothing to fetch from.
-trust_our_ca() {
-  [ "${TRUST_CA:-0}" = 1 ] || return 0
-  if caddy trust --address "localhost:$ADMIN_PORT"; then
-    ui_ok "trusted the CA belonging to this ldev daemon (admin $ADMIN_PORT)"
-  else
-    ui_warn "caddy trust failed — ldev sites will load but show a certificate warning."
-    ui_cmd "caddy trust --address localhost:$ADMIN_PORT"
-  fi
+# `curl -k` would pass in every one of those states, which is precisely why this does not
+# use it. Dropping -k is the whole check.
+verify_tls() {
+  command -v curl >/dev/null 2>&1 || return 0
+  local host="ldev-install-probe.$TLD" code
+  code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 "https://$host/" 2>/dev/null || true)"
+  case "$code" in
+    ''|000)
+      ui_warn "served a certificate this machine does not trust (https://$host)."
+      ui_hint "Sites will load with a browser warning. The chain is probably fine and the"
+      ui_hint "root is probably not trusted — compare what is being served against mkcert's:"
+      ui_cmd "openssl s_client -connect 127.0.0.1:443 -servername $host </dev/null | openssl x509 -noout -issuer"
+      ui_cmd "mkcert -install"
+      ;;
+    *)
+      ui_ok "HTTPS works with no extra trust step (verified without -k)"
+      ;;
+  esac
+  return 0
 }
 
 claimed_ports() {
@@ -1088,6 +1115,7 @@ render() {
       -e "s|__SITES__|$SITES|g" \
       -e "s|__DASHBOARD__|$DASHBOARD|g" \
       -e "s|__PHP_FPM__|$PHP_FPM|g" \
+      -e "s|__MKCERT_ROOT__|$MKCERT_ROOT|g" \
       -e "s|__ADMIN_PORT__|$ADMIN_PORT|g" \
       -e "s|__ASK_PORT__|$ASK_PORT|g" \
       -e "s|__LOGDIR__|$LOGDIR|g" \
@@ -1139,7 +1167,7 @@ case "$MODE" in
           done
           if [ "$serving" = 1 ]; then
             ui_ok "service started and listening"
-            trust_our_ca
+            verify_tls
           else
             ui_warn "$DAEMON_LABEL was accepted by launchd but nothing is listening on 80 or 443."
             ui_hint "Caddy most likely started and exited. The usual cause is its admin port"
