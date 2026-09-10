@@ -1,0 +1,128 @@
+{
+  "version": "0.1.0",
+  "id": "8430ebe0-fc9a-4b09-a9ad-9f2df3ea2b5e",
+  "timestamp": "2026-09-10T03:56:43Z",
+  "vcs": {
+    "type": "git",
+    "revision": "3f97668e596025919154842949e0e67e0360f5a4"
+  },
+  "tool": {
+    "name": "triaj",
+    "version": "1.3.1"
+  },
+  "files": [
+    {
+      "path": "bin/ldev",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/3e8f56a2-7837-42a5-adfb-4e072f3876ee",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 101,
+              "end_line": 128,
+              "content_hash": "sha256:92191a5c9277d422ab3cceca1b73661470ee00c9ab726a7faee25367c07ec01e",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "install.sh",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/3e8f56a2-7837-42a5-adfb-4e072f3876ee",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 47,
+              "end_line": 54,
+              "content_hash": "sha256:5b496d232f7418b46eef33be7c16953194941b8d8eb37c2e69833e87ecd8c877",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 57,
+              "end_line": 57,
+              "content_hash": "sha256:c84244bf50e0029009e06516b6ce6b9edff438240051f045334019b267a61277",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 59,
+              "end_line": 60,
+              "content_hash": "sha256:fc2bfae6840bca116733b9d97a4b7b72a6380fe7933929e9e02e1b3128491ba3",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 110,
+              "end_line": 111,
+              "content_hash": "sha256:4ff035e1aaa44c90138bec23c881a9c6765c68aae6070f617e545e41eba98172",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 148,
+              "end_line": 149,
+              "content_hash": "sha256:71f29960de4722348f6819f0385603eeb2bd0bc84d77dfc67ed86be41a355c3a",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "test/doctor-ca.test.sh",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/3e8f56a2-7837-42a5-adfb-4e072f3876ee",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 1,
+              "end_line": 60,
+              "content_hash": "sha256:f7c81de3aafcaf311665fef07a0587f8b3416deb05994464a7682641de9d1acc",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "triaj": {
+      "task": "Make room for the TUI branch: ANSWER, and a CA check that reads the config",
+      "status": "Waiting",
+      "agent": "claude-code",
+      "attribution_granularity": "commit"
+    }
+  }
+}
