@@ -8,6 +8,7 @@
 #   ldev standalone <name> give one site its own server, fronted by the wildcard one
 #   ldev proxy <name> <port>  serve a site from a dev server already running on that port
 #   ldev rehome <name>     move a WordPress site onto its portless URL
+#   ldev update            migrate an older config to this version, then re-render
 #   ldev render            re-render the server config, without restarting
 #   ldev apply             re-render the server config and restart
 #   ldev restart           restart the server
@@ -67,7 +68,7 @@ cmd_doctor() {
   if [ "$any" = 0 ]; then
     fix "start the service — sudo launchctl bootstrap system /Library/LaunchDaemons/com.ldev.caddy.plist"
     # An install predating the single-mode change has no daemon to start at all.
-    [ "${MODE:-}" = "" ] || fix "this install still records MODE=$MODE — re-run ./install.sh to migrate it"
+    [ "${MODE:-}" = "" ] || fix "this install still records MODE=$MODE — run 'ldev update' to migrate it"
   fi
 
   # A listening port is not the same as OUR listening port, and believing an open socket is
@@ -118,6 +119,19 @@ cmd_doctor() {
     [ -d "$SITES/${base%.$TLD}" ] \
       && note "$base and ${base%.$TLD} are one hostname — https://$base/ serves ${base%.$TLD}"
   done
+  # Config drift is invisible without asking for it: every use site has a ${X:-default}
+  # behind it, so a machine missing a key added two releases ago behaves plausibly and its
+  # owner is never asked about the choice that key represents.
+  local missing="" stale="" ck
+  for ck in $CONFIG_KEYS; do grep -qE "^$ck=" "$CONFIG_FILE" || missing="$missing $ck"; done
+  for ck in $CONFIG_OBSOLETE; do grep -qE "^$ck=" "$CONFIG_FILE" && stale="$stale $ck"; done
+  if [ -n "$missing" ] || [ -n "$stale" ]; then
+    note "config is from an older ldev —${missing:+ missing:$missing}${stale:+ obsolete:$stale}"
+    fix "ldev update"
+  else
+    ok "config has every key this version expects"
+  fi
+
   [ -f "$DASHBOARD/index.html" ] && ok "dashboard built" || { bad "dashboard not built"; fix "cd $REPO_DIR/dashboard && npm run build"; }
 
   printf '\n%sEnd to end%s\n' "$B" "$R"
@@ -638,6 +652,114 @@ cmd_rehome() {
     "$dir" "$backup" "$dir" "$stamp" "$dir"
 }
 
+# What this version of ldev expects to find in the config file.
+#
+# ONE list, rather than a `${X:-default}` scattered at each use. Those defaults keep an old
+# config working, which is right, but they also make drift invisible: a key added two
+# releases ago is silently absent everywhere and nobody is ever asked about it. This is what
+# `ldev update` compares against, so "what a config should contain" has a single answer.
+CONFIG_KEYS="TLD SITES PHP_FPM DASHBOARD ADMIN_PORT SITE_PORT_BASE ASK_PORT PROXY_FALLBACK LOGDIR REPO_DIR"
+
+# Keys older versions wrote that this one does not understand. Left in place they are inert,
+# but they describe a machine that no longer exists — MODE=persite on an install with no
+# per-site mode is a lie a future reader will believe.
+CONFIG_OBSOLETE="MODE"
+
+config_default() {
+  case "$1" in
+    TLD)            printf 'ldev' ;;
+    SITES)          printf '%s/Sites' "$HOME" ;;
+    PHP_FPM)        printf '127.0.0.1:9000' ;;
+    DASHBOARD)      printf '%s/dashboard/dist' "${REPO_DIR:-.}" ;;
+    ADMIN_PORT)     printf '2019' ;;
+    SITE_PORT_BASE) printf '8443' ;;
+    ASK_PORT)       printf '2018' ;;
+    # The conservative half of the choice: an honest proxy error rather than a page that
+    # looks alive while being arbitrarily stale. `ldev update` never silently opts a machine
+    # into the surprising behaviour — that is what the installer's question is for.
+    PROXY_FALLBACK) printf 'no' ;;
+    LOGDIR)         printf '%s/Library/Logs/ldev' "$HOME" ;;
+    REPO_DIR)       printf '%s' "${REPO_DIR:-.}" ;;
+  esac
+}
+
+# Bring a config written by an older ldev up to what this one expects, without reinstalling.
+#
+# Re-running install.sh does work, and did until now, but it is the wrong shape for "I pulled
+# a new version": it asks every question again, wants sudo, reinstalls the launchd daemon and
+# offers to tear down whatever is serving. None of that is needed to add a key.
+cmd_update() {
+  local added="" removed="" k v stamp changed=0
+  stamp="$(date '+%Y%m%d-%H%M%S')"
+
+  for k in $CONFIG_KEYS; do
+    grep -qE "^$k=" "$CONFIG_FILE" || added="$added $k"
+  done
+  for k in $CONFIG_OBSOLETE; do
+    grep -qE "^$k=" "$CONFIG_FILE" && removed="$removed $k"
+  done
+
+  printf '\n%sConfig%s\n' "$B" "$R"
+  if [ -z "$added" ] && [ -z "$removed" ]; then
+    ok "up to date — every key this version expects is present"
+  else
+    # Back up before rewriting. The config is small and hand-editable, and somebody who
+    # tuned a port by hand should be able to get their version back.
+    cp "$CONFIG_FILE" "$CONFIG_FILE.bak-$stamp"
+    changed=1
+    for k in $removed; do
+      sed -i '' "/^$k=/d" "$CONFIG_FILE"
+      ok "removed $k — no longer used"
+    done
+    for k in $added; do
+      v="$(config_default "$k")"
+      printf '%s=%s\n' "$k" "$v" >> "$CONFIG_FILE"
+      ok "added $k=$v"
+    done
+    note "previous config saved as $CONFIG_FILE.bak-$stamp"
+    # shellcheck disable=SC1090
+    . "$CONFIG_FILE"
+  fi
+
+  printf '\n%sService%s\n' "$B" "$R"
+  local plist=/Library/LaunchDaemons/com.ldev.caddy.plist want
+  if [ ! -f "$plist" ]; then
+    note "no launchd daemon installed — ./install.sh adds it (needs sudo)"
+  else
+    want="$(mktemp)"
+    sed -e "s|__CADDY_BIN__|$(command -v caddy || echo caddy)|g" \
+        -e "s|__CADDYFILE__|$CADDYFILE|g" \
+        -e "s|__HOME__|$HOME|g" \
+        -e "s|__LOGDIR__|$LOGDIR|g" \
+        "$REPO_DIR/templates/com.ldev.caddy.plist.tmpl" > "$want"
+    # The plist is root-owned, so this reports rather than fixes. Saying nothing would be
+    # worse: a daemon still running last release's template is exactly the kind of drift
+    # that survives every other check here.
+    if cmp -s "$want" "$plist"; then
+      ok "launchd plist matches this version's template"
+    else
+      bad "launchd plist differs from this version's template"
+      fix "re-run ./install.sh to refresh it (needs sudo)"
+    fi
+    rm -f "$want"
+  fi
+
+  printf '\n%sServer config%s\n' "$B" "$R"
+  cmd_render || return 1
+
+  if [ -f "$plist" ]; then
+    printf '\n'
+    cmd_restart
+  else
+    printf '\n'
+    note "not restarting — no daemon to restart"
+  fi
+
+  printf '\n'
+  [ "$changed" = 1 ] && printf '  Run %sldev doctor%s to confirm.\n\n' "$B" "$R"
+  return 0
+}
+
 # Render the wildcard Caddyfile and validate it. Separate from `apply` because install.sh
 # needs the config on disk BEFORE it can bootstrap the launchd daemon that reads it, and
 # `apply` ends by restarting a service that does not exist yet at that point.
@@ -686,6 +808,7 @@ case "${1:-doctor}" in
   standalone) shift; cmd_standalone "$@" ;;
   proxy)   shift; cmd_proxy "$@" ;;
   rehome)  shift; cmd_rehome "$@" ;;
+  update)  shift; cmd_update "$@" ;;
   render)  shift; cmd_render "$@" ;;
   apply)   shift; cmd_apply "$@" ;;
   restart) shift; cmd_restart "$@" ;;
