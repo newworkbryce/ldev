@@ -69,6 +69,16 @@ cmd_doctor() {
     [ "${MODE:-}" = "" ] || fix "this install still records MODE=$MODE — re-run ./install.sh to migrate it"
   fi
 
+  # A listening port is not the same as OUR listening port, and believing an open socket is
+  # how the broken layer came back green. On the machine that prompted this, 443 was held by
+  # a hand-written daemon serving exactly one host: that host loaded, every other name
+  # aborted the TLS handshake, and the browser said ERR_SSL_PROTOCOL_ERROR — which names
+  # neither the port nor the server nor the missing site.
+  if nc -z 127.0.0.1 443 2>/dev/null && [ ! -f /Library/LaunchDaemons/com.ldev.caddy.plist ]; then
+    bad "something on 443 is not ldev — its LaunchDaemon is not installed"
+    fix "re-run ./install.sh; it finds what holds 80/443 and offers to take it down"
+  fi
+
   printf '\n%sPHP%s\n' "$B" "$R"
   local host="${PHP_FPM%:*}" port="${PHP_FPM##*:}"
   if nc -z "$host" "$port" 2>/dev/null; then ok "PHP-FPM answering on $PHP_FPM"
@@ -85,6 +95,18 @@ cmd_doctor() {
     bad "no Caddyfile at $CADDYFILE"; fix "ldev apply"
   fi
   [ -d "$SITES" ] && ok "sites directory $SITES" || bad "missing sites directory $SITES"
+
+  # Every host's certificate is issued by Caddy's local CA, so an untrusted CA is a warning
+  # on every site at once. The daemon cannot fix this itself: running as root under launchd
+  # it has no tty for the sudo the install needs, and all it does is log "failed to install
+  # root certificate" once and carry on serving. Nothing surfaces that, so check the trust
+  # store directly rather than reading a log nobody opens.
+  if security find-certificate -a -c "Caddy Local Authority" >/dev/null 2>&1; then
+    ok "Caddy's local CA is in the trust store"
+  else
+    bad "Caddy's local CA is not trusted — every site will warn"
+    fix "caddy trust"
+  fi
 
   # `shop` and `shop.$TLD` are one hostname with two folders, and the plain one wins.
   # Editing the shadowed folder and seeing nothing change is a long hour, so name it here.

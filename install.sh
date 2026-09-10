@@ -251,6 +251,202 @@ say "wrote $CONFIG_FILE"
 
 # ---------------------------------------------------------------- 7. server config
 
+# ------------------------------------------------- 7a. the installation being replaced
+
+step "Existing installation"
+
+# Whatever already answers for this TLD has to come down before ldev's own daemon goes up,
+# and finding it is the installer's job. It used not to be: an install that changed the
+# topology wrote its config, installed its daemon, and left the previous one running — so
+# both were live, one held 80, the other held 443, and the bare https://<tld>/ URL answered
+# from neither while the install reported success.
+#
+# Per-site servers on high ports are deliberately NOT touched. They are fronted by the
+# wildcard server now rather than replaced by it, so stopping them would take down the
+# sites this install is meant to make reachable.
+
+# A port's listener, or empty. lsof exits non-zero when it can see nothing — INCLUDING a
+# root-owned socket an unprivileged user cannot inspect, which is exactly the case here —
+# and this script runs under `set -e` with pipefail, so the failure is swallowed on
+# purpose. An earlier version of this check ended in an unguarded lsof|awk pipeline and
+# killed the installer on any machine with something already on port 80.
+port_owner() {
+  local out=""
+  out="$(lsof -nP -iTCP:"$1" -sTCP:LISTEN 2>/dev/null | awk 'NR>1 {print $1; exit}')" || true
+  printf '%s' "$out"
+}
+
+port_busy() { nc -z 127.0.0.1 "$1" 2>/dev/null; }
+
+# launchd jobs that serve this TLD, one plist path per line.
+#
+# Matched by CONTENT, never by filename. The job doing this on the machine that motivated
+# the check was called com.bryce.caddy-matsu — nothing in that name says ldev, or caddy's
+# role, or which TLD it serves, and a filename convention is not something an installer
+# gets to assume about a file somebody else wrote.
+ldev_launchd_jobs() {
+  local f
+  for f in /Library/LaunchDaemons/*.plist "$HOME/Library/LaunchAgents"/*.plist; do
+    [ -f "$f" ] || continue
+    grep -qi "caddy" "$f" 2>/dev/null || continue
+    if grep -qF "$HOME/.config/ldev" "$f" 2>/dev/null \
+    || grep -qF "$SITES" "$f" 2>/dev/null \
+    || grep -qF ".$TLD" "$f" 2>/dev/null; then
+      printf '%s\n' "$f"
+    fi
+  done
+}
+
+plist_label() {
+  /usr/libexec/PlistBuddy -c 'Print :Label' "$1" 2>/dev/null || basename "$1" .plist
+}
+
+# Does this launchd job want port 80 or 443?
+#
+# This is the difference between the job ldev is REPLACING and the ones it is about to
+# start fronting. A per-site server on 8443 is not in the way — the wildcard server proxies
+# to it — and removing it would take down the very site this install is meant to make
+# reachable portlessly. Only a job holding a privileged port has to go.
+#
+# The answer is in the Caddyfile the job runs, not in the plist: a Caddy site address with
+# no port means 443, `http://` means 80, and anything else names its port outright.
+job_wants_privileged_port() {
+  local plist="$1" cfg="" line addr
+  # The config path is whichever ProgramArguments entry looks like a Caddyfile.
+  cfg="$(grep -oE '<string>[^<]*Caddyfile[^<]*</string>' "$plist" 2>/dev/null \
+        | sed -E 's|</?string>||g' | head -1)" || true
+  [ -n "$cfg" ] && [ -f "$cfg" ] || return 1   # cannot tell — treat as not in the way
+
+  # Real address lines only: not comments, and ending in the `{` that opens a site block.
+  # The keyless global block `{` is excluded, or every file would look like an address.
+  while IFS= read -r line; do
+    # Per ADDRESS, not per line. A Caddy address line can carry several, and each is
+    # INDEPENDENT: in `matsu.ldev, matsu-dev.ldev:8444 {` the neighbour is on 8444 and
+    # matsu.ldev is on the default 443. Reading the first port on the LINE would call that
+    # file unprivileged and leave the job holding 443 in place — which is the entire
+    # failure this check exists to prevent.
+    line="${line%\{}"
+    for addr in ${line//,/ }; do
+      case "$addr" in
+        "") continue ;;
+        *:80|*:443)  return 0 ;;                 # names a privileged port outright
+        http://*:*)  continue ;;                 # http:// with an explicit port
+        http://*)    return 0 ;;                 # http:// with none means 80
+        https://*:*) continue ;;
+        https://*)   return 0 ;;                 # https:// with none means 443
+        *:[0-9]*)    continue ;;                 # some other port
+        *)           return 0 ;;                 # bare host, no port: https on 443
+      esac
+    done
+  done <<EOF
+$(grep -vE '^[[:space:]]*#' "$cfg" 2>/dev/null | grep -E '\{[[:space:]]*$' | grep -vE '^[[:space:]]*\{[[:space:]]*$' || true)
+EOF
+  return 1
+}
+
+ALL_JOBS="$(ldev_launchd_jobs || true)"
+
+# Only the jobs holding 80 or 443 are in the way. The rest are per-site servers this
+# install is about to put BEHIND the wildcard one, and they keep running.
+EXISTING=""
+KEPT=""
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  if job_wants_privileged_port "$f"; then
+    EXISTING="$EXISTING$f"$'\n'
+  else
+    KEPT="$KEPT$f"$'\n'
+  fi
+done <<EOF
+$ALL_JOBS
+EOF
+EXISTING="${EXISTING%$'\n'}"
+KEPT="${KEPT%$'\n'}"
+OWNER_80="$(port_owner 80)"
+OWNER_443="$(port_owner 443)"
+
+if [ -n "$KEPT" ]; then
+  n=0
+  while IFS= read -r f; do [ -n "$f" ] && n=$((n + 1)); done <<EOF
+$KEPT
+EOF
+  say "$n per-site server(s) on high ports — left running, the wildcard server will proxy to them."
+fi
+
+if [ -z "$EXISTING" ] && ! port_busy 80 && ! port_busy 443; then
+  say "Nothing else holds ports 80 or 443."
+else
+  say "Found something already serving, or already holding the ports ldev needs:"
+  say ""
+  if [ -n "$EXISTING" ]; then
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      say "  launchd  $(plist_label "$f")"
+      say "           $f"
+    done <<EOF
+$EXISTING
+EOF
+  fi
+  # A busy port with no plist behind it is somebody's `caddy run` in a terminal, or a
+  # server this installer has no business removing. Name it and stop, rather than guess.
+  for prt in 80 443; do
+    if port_busy "$prt"; then
+      owner="$(port_owner "$prt")"
+      say "  port $prt  ${owner:-held by a process this user cannot see (root-owned)}"
+    fi
+  done
+  say ""
+
+  if [ -n "$EXISTING" ]; then
+    say "Removing these stops them serving and deletes their plist. Site FOLDERS are"
+    say "never touched, and per-site servers on high ports keep running — the new"
+    say "wildcard server proxies to them rather than replacing them."
+    if confirm "Take them down?"; then
+      while IFS= read -r f; do
+        [ -n "$f" ] || continue
+        label="$(plist_label "$f")"
+        case "$f" in
+          /Library/LaunchDaemons/*)
+            sudo launchctl bootout "system/$label" 2>/dev/null || true
+            # launchd keeps a per-label DISABLED record that outlives both bootout and
+            # deleting the plist, and a later bootstrap of that label then fails with
+            # "Bootstrap failed: 5: Input/output error" — a message naming neither the
+            # label nor the word disabled. Leave the label clean on the way out.
+            sudo launchctl enable "system/$label" 2>/dev/null || true
+            sudo rm -f "$f"
+            ;;
+          *)
+            launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
+            launchctl enable "gui/$(id -u)/$label" 2>/dev/null || true
+            rm -f "$f"
+            ;;
+        esac
+        say "  removed $label"
+      done <<EOF
+$EXISTING
+EOF
+      # launchd unloads asynchronously; bootstrapping into a port the old job has not let
+      # go of yet fails in a way that reads as a port conflict with nothing visible on it.
+      for _ in 1 2 3 4 5 6 7 8 9 10; do
+        port_busy 80 || port_busy 443 || break
+        sleep 1
+      done
+      if port_busy 80 || port_busy 443; then
+        warn "ports 80/443 are still busy after removing those jobs — something else holds them."
+      else
+        say "  ports 80 and 443 are free."
+      fi
+    else
+      warn "Left in place. The ldev daemon will fail to bind whichever port they hold."
+    fi
+  else
+    warn "No launchd job explains this, so there is nothing here safe to remove."
+    say  "Stop whatever holds the port yourself, then re-run this installer."
+  fi
+fi
+
+# ---------------------------------------------------------------- 7b. server configuration
+
 step "Server configuration"
 
 render() {
@@ -280,6 +476,11 @@ if confirm "Install and start the ldev launchd service?"; then
   render "$REPO_DIR/templates/com.ldev.caddy.plist.tmpl" | sudo tee "$PLIST" >/dev/null
   sudo chown root:wheel "$PLIST"; sudo chmod 644 "$PLIST"
   sudo launchctl bootout system/com.ldev.caddy 2>/dev/null || true
+  # If this label was ever booted out and its plist deleted, launchd still holds a disabled
+  # record for it and bootstrap fails with "Bootstrap failed: 5: Input/output error" — which
+  # names neither the label nor the word disabled, so it reads as a broken plist. Enabling
+  # first is a no-op when there is no such record, and the fix when there is.
+  sudo launchctl enable system/com.ldev.caddy 2>/dev/null || true
   sudo launchctl bootstrap system "$PLIST"
   say "service started."
 else
