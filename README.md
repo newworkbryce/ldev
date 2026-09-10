@@ -359,12 +359,20 @@ length, and is the authoritative description of the routing.
 
 `dashboard/` is a React + PHP app listing local projects with their name, URL, port and
 platform, and detecting WordPress installs by reading `WP_HOME` from `wp-config.php`. It
-is what an unknown hostname falls back to, and it lives at:
+is where an unknown hostname sends you, and it lives at:
 
 ```
-https://ldev/            # the bare TLD
-http://localhost/        # and here, no certificate needed
+https://sites.ldev/          # its address
+http://sites.localhost/      # and here, no certificate needed
 ```
+
+`https://ldev/` and `http://localhost/` still work — they redirect. So does any hostname
+with no folder behind it, which **redirects** rather than rendering the dashboard in place:
+otherwise every typo would draw the dashboard under the typo's own name, and the address
+bar would go on claiming a site exists at a name that has nothing behind it.
+
+One consequence worth knowing: a folder literally named `sites` is shadowed by this, since
+`sites.ldev` is matched before the wildcard. `ldev list` still shows it.
 
 Its Sites directory and TLD are configurable in **Settings**, and its config lives outside
 the repo so a rebuild never overwrites it. To rebuild it after a change:

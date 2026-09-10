@@ -80,8 +80,10 @@ awk -v port="$PORT" '
   }
   /^\tadmin localhost:/             { print "\tadmin off"; print "\tauto_https off"; next }
   /^\*\.ldev \{$/                   { print "http://*.ldev:" port " {"; next }
+  /^sites\.ldev \{$/                { print "http://sites.ldev:" port " {"; next }
   /^ldev \{$/                       { print "http://ldev:" port " {"; next }
   /^http:\/\/\*\.localhost \{$/     { print "http://*.localhost:" port " {"; next }
+  /^http:\/\/sites\.localhost \{$/  { print "http://sites.localhost:" port " {"; next }
   /^http:\/\/localhost \{$/         { print "http://localhost:" port " {"; next }
   { print }
 ' "$TMP/Caddyfile" > "$TMP/serve/Caddyfile"
@@ -110,8 +112,12 @@ get() { curl -s --max-time 5 -H "Host: $1" "http://127.0.0.1:$PORT/"; }
 check "plain folder"            "$(get shop.ldev)"       "PLAIN-SHOP"
 check "folder named the old way" "$(get blog.ldev)"      "OLD-BLOG"
 check "plain wins over old"     "$(get both.ldev)"       "PLAIN-BOTH"
-check "unknown host"            "$(get nothing.ldev)"    "DASHBOARD"
-check "bare TLD is the dashboard" "$(get ldev)"          "DASHBOARD"
+# The dashboard has one address, and everything that used to answer with it now points
+# there — so a typo cannot leave the address bar claiming a site exists at that name.
+where() { curl -s -o /dev/null -w '%{redirect_url}' --max-time 5 -H "Host: $1" "http://127.0.0.1:$PORT/"; }
+check "sites.<tld> IS the dashboard" "$(get sites.ldev)"  "DASHBOARD"
+check "unknown host redirects there"  "$(where nothing.ldev)" "https://sites.ldev/"
+check "bare TLD redirects there"      "$(where ldev)"         "https://sites.ldev/"
 
 # The .localhost origin must agree with the TLD origin about which folder a name means.
 check ".localhost plain"        "$(get shop.localhost)"  "PLAIN-SHOP"
