@@ -1,0 +1,119 @@
+{
+  "version": "0.1.0",
+  "id": "46e318cf-25af-4192-bfea-66d59b3516d5",
+  "timestamp": "2026-09-10T05:48:46Z",
+  "vcs": {
+    "type": "git",
+    "revision": "aeb0099dcdc99b3a0f372ae15a7ea577c4163750"
+  },
+  "tool": {
+    "name": "triaj",
+    "version": "1.3.1"
+  },
+  "files": [
+    {
+      "path": "bin/ldev",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/eb23749b-b71d-44b3-ab30-5c8053a65845",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 511,
+              "end_line": 511,
+              "content_hash": "sha256:aeb30c08765602e3856caaafff152a7e23e5ec125e388b8e81c5f2f4a627e6ad",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 537,
+              "end_line": 537,
+              "content_hash": "sha256:aeb30c08765602e3856caaafff152a7e23e5ec125e388b8e81c5f2f4a627e6ad",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "install.sh",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/eb23749b-b71d-44b3-ab30-5c8053a65845",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 331,
+              "end_line": 331,
+              "content_hash": "sha256:271fa47fe9be022d64960e6ac4cd0b6cc312b1e956a54d91299686636bea59d0",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 375,
+              "end_line": 375,
+              "content_hash": "sha256:f65c825e5b465f443dc9f2b5d23a7e26d523b940f7c1ef75772366210aa406c5",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 730,
+              "end_line": 734,
+              "content_hash": "sha256:32079d29aeebcc192c3175818b83e120c6972cba582ac31a86801422f9103998",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "test/proxy.test.sh",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/eb23749b-b71d-44b3-ab30-5c8053a65845",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 59,
+              "end_line": 73,
+              "content_hash": "sha256:46cecfae3960595dcea9c8de3c6af064bc1d3ae96996a3c29a419b1c3816b0af",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "triaj": {
+      "task": "Sign proxied sites with the local CA",
+      "status": "Waiting",
+      "agent": "claude-code",
+      "attribution_granularity": "commit"
+    }
+  }
+}
