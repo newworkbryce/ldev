@@ -1,0 +1,156 @@
+{
+  "version": "0.1.0",
+  "id": "d0c9f89e-53cf-4528-b43e-85d4a4f4ba11",
+  "timestamp": "2026-09-10T04:03:01Z",
+  "vcs": {
+    "type": "git",
+    "revision": "be8849ed4c912ce4b78952d051b3955fd462f740"
+  },
+  "tool": {
+    "name": "triaj",
+    "version": "1.3.1"
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/3e8f56a2-7837-42a5-adfb-4e072f3876ee",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 408,
+              "end_line": 408,
+              "content_hash": "sha256:cfb7b794951e57b6ddf35eca5ca229d4a0f10ad58b73fdfa3239851f9d34d145",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 454,
+              "end_line": 455,
+              "content_hash": "sha256:ea5ade65aabc5be62a6ee6d23a8d624fa08da407560ee7eccf460eb3c8f135da",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "bin/ldev",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/3e8f56a2-7837-42a5-adfb-4e072f3876ee",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 157,
+              "end_line": 180,
+              "content_hash": "sha256:656369ae1f720685869bf92b386ab5538a29408dddd2d344975454eccf9ed376",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "templates/Caddyfile.site.tmpl",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/3e8f56a2-7837-42a5-adfb-4e072f3876ee",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 54,
+              "end_line": 72,
+              "content_hash": "sha256:1a43e04cef9b57b41ef3d2f944288e1e2defd84e2580f003d2fd5f7223357789",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "templates/Caddyfile.tmpl",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/3e8f56a2-7837-42a5-adfb-4e072f3876ee",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 105,
+              "end_line": 124,
+              "content_hash": "sha256:8f8d3108e035c241081a1aab1e6e516b48d9d9af0a40dbf43da0dd5114ffaae7",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 187,
+              "end_line": 193,
+              "content_hash": "sha256:70ca52bbeb05d148250b5286b5905e743033c53c89a83b74d2c71222515bce13",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "test/secrets.test.sh",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/3e8f56a2-7837-42a5-adfb-4e072f3876ee",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 1,
+              "end_line": 72,
+              "content_hash": "sha256:18909b2e9620a991fba3ffe994d6a270032519e0f693ca027060d765a031baca",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "triaj": {
+      "task": "Refuse key material and secrets from a site root",
+      "status": "Waiting",
+      "agent": "claude-code",
+      "attribution_granularity": "commit"
+    }
+  }
+}
