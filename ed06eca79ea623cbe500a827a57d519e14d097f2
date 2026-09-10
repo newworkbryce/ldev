@@ -1,0 +1,119 @@
+{
+  "version": "0.1.0",
+  "id": "5657ab97-c4cd-4cea-b30a-7392a10f0bd6",
+  "timestamp": "2026-09-10T02:25:37Z",
+  "vcs": {
+    "type": "git",
+    "revision": "ed06eca79ea623cbe500a827a57d519e14d097f2"
+  },
+  "tool": {
+    "name": "triaj",
+    "version": "1.3.1"
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/3e8f56a2-7837-42a5-adfb-4e072f3876ee",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 338,
+              "end_line": 338,
+              "content_hash": "sha256:764dc96068ed3343003da04fb9d77998c32f5d6622bc5b7c4c74adbe17955949",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 411,
+              "end_line": 411,
+              "content_hash": "sha256:17789d1e33adb3c99eefde514c317c4b5f31290bd7ea465727ce338deced0271",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "install.sh",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/3e8f56a2-7837-42a5-adfb-4e072f3876ee",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 127,
+              "end_line": 139,
+              "content_hash": "sha256:fa0802f0e48cfcaf760ac052e05f18c5355567290b2a916e4da6397ac6aa7fcb",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 243,
+              "end_line": 243,
+              "content_hash": "sha256:a289da2f1fc63990cb281761896e7d0d75e3e4ea4089a36cfbc0c9841855b315",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 444,
+              "end_line": 485,
+              "content_hash": "sha256:b6703c720a91ebd979bef63b600dab13209a80bddd8780a1383e0a5fd8d5ddd3",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "test/install-ports.test.sh",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/3e8f56a2-7837-42a5-adfb-4e072f3876ee",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 1,
+              "end_line": 73,
+              "content_hash": "sha256:f7a772071358cfec58118e87c356de56d3b3c572322bce6c6605169b035594d6",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "triaj": {
+      "task": "Keep the ports a previous install chose, and step past ones already taken",
+      "status": "Waiting",
+      "agent": "claude-code",
+      "attribution_granularity": "commit"
+    }
+  }
+}
