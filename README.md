@@ -68,8 +68,8 @@ cd ldev
 ./install.sh
 ```
 
-The installer asks four things — **TLD**, **sites directory**, **serving mode**, and
-whether to make the root-owned changes for you — then does the rest.
+The installer asks three things — **TLD**, **sites directory**, and whether to make the
+root-owned changes for you — then does the rest. There is no serving mode to choose.
 
 Non-interactive:
 
@@ -86,6 +86,34 @@ Non-interactive:
 | `--skip-dns` | Leave `/etc/resolver` and dnsmasq alone. |
 | `--yes`, `-y` | Answer yes to every confirmation. |
 | `--defaults` | Accept every default and prompt for nothing. |
+
+### Replacing an existing setup
+
+Before installing its own daemon, the installer looks for whatever already serves the TLD
+and offers to take it down, because leaving it up is what produced the worst failure this
+tool has had: two servers live at once, one holding 80 and the other 443, and the bare
+`https://<tld>/` URL answering from neither — while the install reported success.
+
+It matches launchd jobs by **content**, not by filename: a job is found because its
+`ProgramArguments` run `caddy` against a Caddyfile under your sites or config directory,
+not because it is called something ldev-ish. The one that motivated this was named
+`com.bryce.caddy-matsu`.
+
+Only jobs wanting **port 80 or 443** are offered for removal. A per-site server on a high
+port is not in the way — the wildcard server proxies to it — so it is listed as kept and
+left running. That distinction is per *address*, not per line: in
+
+```
+matsu.ldev, matsu-dev.ldev:8444 {
+```
+
+each host has its own address, so `matsu-dev.ldev` is on 8444 and `matsu.ldev` is on the
+default 443. Reading the first port on that line would call the job harmless and leave it
+holding the port ldev needs.
+
+Site folders are never touched, and a busy port with no launchd job behind it is named
+rather than guessed at — that is somebody's `caddy run` in a terminal, and not the
+installer's to kill.
 
 The installer then offers to put the CLI on your `PATH`, and says exactly what it would
 append and to which file before it does:
@@ -333,6 +361,7 @@ fixes whatever failed. The common ones:
 |---|---|---|
 | 🌍 Name does not resolve at all | Resolver file or dnsmasq | `echo 'nameserver 127.0.0.1' \| sudo tee /etc/resolver/ldev` then `sudo brew services restart dnsmasq` |
 | 🔌 Resolves, then "connection refused" | Nothing on 443 — the service is not running | `sudo launchctl bootstrap system /Library/LaunchDaemons/com.ldev.caddy.plist` |
+| 🔐 `ERR_SSL_PROTOCOL_ERROR` on every site but one | Something other than ldev holds 443 and knows only that one host | `ldev doctor` names it; re-run `./install.sh` to take it down |
 | 🔒 Certificate warning in the browser | The local CA is not trusted | `caddy trust` |
 | 📄 Blank page on a PHP site | PHP-FPM is not listening | `brew services start php` |
 | 🧭 You get the dashboard instead of your site | The folder has no `index.php` or `index.html` — or a plain folder is shadowing a `.ldev` one | `ldev list` |
@@ -360,6 +389,7 @@ instead.
 | `~/.config/ldev/Caddyfile` | you | generated server config |
 | `~/Library/Logs/ldev/` | you | access logs |
 | `/Library/LaunchDaemons/com.ldev.caddy.plist` | root | starts Caddy on 80/443 at boot |
+| another launchd job holding 80/443 | root or you | **removed**, only if you accept the prompt — see [Replacing an existing setup](#replacing-an-existing-setup) |
 | system trust store | root | trusts the local CA, once |
 | your shell's startup file | you | one `PATH` line — only if you accept the prompt |
 
@@ -377,6 +407,7 @@ bash test/standalone.test.sh     # new, standalone and render: config, ports, pr
 bash test/site-ports.test.sh     # the site/admin port allocator
 bash test/rehome.test.sh         # what rehome refuses to do to your site data
 bash test/path-setup.test.sh     # the right startup file and syntax per shell
+bash test/existing-install.test.sh  # which launchd job is in the way, and which is fronted
 ```
 
 They skip gracefully when `caddy` is not on the `PATH`, or when a port they need is busy.
