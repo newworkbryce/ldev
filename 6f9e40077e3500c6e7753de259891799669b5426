@@ -1,0 +1,137 @@
+{
+  "version": "0.1.0",
+  "id": "b53220ee-1ed6-47bc-8683-162583ca4791",
+  "timestamp": "2026-09-10T01:14:29Z",
+  "vcs": {
+    "type": "git",
+    "revision": "6f9e40077e3500c6e7753de259891799669b5426"
+  },
+  "tool": {
+    "name": "triaj",
+    "version": "1.3.1"
+  },
+  "files": [
+    {
+      "path": "README.md",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/3e8f56a2-7837-42a5-adfb-4e072f3876ee",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 90,
+              "end_line": 91,
+              "content_hash": "sha256:b86c0e39adc42b4c69610a6ad26b8bf27e112f7867f20a65ae2645af7fbe82fc",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 94,
+              "end_line": 110,
+              "content_hash": "sha256:143e6525a5f3b70f01d35636e3b3f4c580523f65d1dc88a0590b61ec48ece235",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 364,
+              "end_line": 364,
+              "content_hash": "sha256:45edf085cb0437a8181e177fb7835aab628865dedafec52be532be718dcce5f2",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 379,
+              "end_line": 379,
+              "content_hash": "sha256:770f744f1020b27761ec9eb64d06daad6e4a78a4a79d65a410c3b204cc29afd1",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 400,
+              "end_line": 403,
+              "content_hash": "sha256:9b0ebdc897b9b98ae6c918a0425fd4567e0bf0f8af937749fbe85570d4b27efc",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "install.sh",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/3e8f56a2-7837-42a5-adfb-4e072f3876ee",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 291,
+              "end_line": 360,
+              "content_hash": "sha256:d5404dc2ca3742ffdd4120ca068dd7267fc44516253b33c51d0411a59c000771",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 375,
+              "end_line": 375,
+              "content_hash": "sha256:7da5d947d7db4b795ebfbe2b84829126727ac973841c0e7dd4a536fc16c5e5c3",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "test/path-setup.test.sh",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/3e8f56a2-7837-42a5-adfb-4e072f3876ee",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 1,
+              "end_line": 53,
+              "content_hash": "sha256:693a8241b15bf2e66575a53bec742b9652e170c244e27fb70b2a78ddebd5a620",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "triaj": {
+      "task": "Offer to put bin/ldev on the PATH, in the shell the user actually runs",
+      "status": "Waiting",
+      "agent": "claude-code",
+      "attribution_granularity": "commit"
+    }
+  }
+}
