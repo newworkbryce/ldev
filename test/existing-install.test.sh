@@ -9,7 +9,7 @@ SITES="$TMP/Sites"; mkdir -p "$SITES"
 
 # port_busy is a one-liner, so a /^}/ range for it runs on to the next function's closing
 # brace. Take the multi-line helpers by range and that one by its own line.
-sed -n '/^port_owner()/,/^}/p;/^ldev_launchd_jobs()/,/^}/p;/^plist_label()/,/^}/p;/^job_wants_privileged_port()/,/^}/p' "$REPO/install.sh" > "$TMP/fns.sh"
+sed -n '/^port_owner()/,/^}/p;/^job_config()/,/^}/p;/^ldev_launchd_jobs()/,/^}/p;/^plist_label()/,/^}/p;/^job_wants_privileged_port()/,/^}/p' "$REPO/install.sh" > "$TMP/fns.sh"
 grep '^port_busy()' "$REPO/install.sh" >> "$TMP/fns.sh"
 TLD=ldev
 # shellcheck disable=SC1090
@@ -96,6 +96,23 @@ kept "$TMP/globalonly.plist" "keyless global block ignored"
 echo "a plist whose Caddyfile is missing is not assumed to be in the way:"
 mkjob ghost "$SITES/nosuchsite/Caddyfile"
 kept "$TMP/ghost.plist" "unreadable config"
+
+echo "a job is found by what its CONFIG serves, not just by what its plist says:"
+# The plist that slipped through named only /opt/homebrew/etc/Caddyfile — no sites path, no
+# TLD, nothing ldev-ish — while that file held the whole front door for the TLD. Judging by
+# the plist alone missed the one process actually sitting on 80 and 443.
+SITES="$TMP/Sites"
+mkdir -p "$TMP/elsewhere"
+printf 'triaj.ldev {\n\treverse_proxy 127.0.0.1:5273\n}\n' > "$TMP/elsewhere/Caddyfile"
+mkjob outsider "$TMP/elsewhere/Caddyfile"
+# ldev_launchd_jobs only scans the real system directories, so call the predicate directly:
+# what is under test is that the CONFIG is consulted, not where plists are enumerated from.
+cfg="$(job_config "$TMP/outsider.plist")"
+if [ "$cfg" = "$TMP/elsewhere/Caddyfile" ]; then echo "  ok   the config path is read out of the plist"; pass=$((pass+1))
+else echo "  FAIL job_config gave '$cfg'"; fail=$((fail+1)); fi
+if grep -qE "[a-z0-9-]+\.ldev" "$cfg"; then echo "  ok   its config names a .ldev host"; pass=$((pass+1))
+else echo "  FAIL the .ldev host in the config was not seen"; fail=$((fail+1)); fi
+inway "$TMP/outsider.plist" "a proxy front door on 443"
 
 rm -rf "$TMP"
 echo

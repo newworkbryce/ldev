@@ -280,14 +280,29 @@ port_busy() { nc -z 127.0.0.1 "$1" 2>/dev/null; }
 # the check was called com.bryce.caddy-matsu — nothing in that name says ldev, or caddy's
 # role, or which TLD it serves, and a filename convention is not something an installer
 # gets to assume about a file somebody else wrote.
+# The config file a job runs, or empty.
+job_config() {
+  grep -oE '<string>[^<]*(Caddyfile|\.conf)[^<]*</string>' "$1" 2>/dev/null \
+    | sed -E 's|</?string>||g' | head -1
+}
+
 ldev_launchd_jobs() {
-  local f
+  local f cfg
   for f in /Library/LaunchDaemons/*.plist "$HOME/Library/LaunchAgents"/*.plist; do
     [ -f "$f" ] || continue
     grep -qi "caddy" "$f" 2>/dev/null || continue
+
+    # The plist names paths; whether those paths serve THIS TLD is usually only visible
+    # inside the config they point at. A Homebrew caddy service, for instance, says nothing
+    # but /opt/homebrew/etc/Caddyfile — and that file turned out to hold the whole front
+    # door for this TLD. Judging the job by its plist alone missed the one process actually
+    # sitting on 80 and 443.
+    cfg="$(job_config "$f")"
+
     if grep -qF "$HOME/.config/ldev" "$f" 2>/dev/null \
     || grep -qF "$SITES" "$f" 2>/dev/null \
-    || grep -qF ".$TLD" "$f" 2>/dev/null; then
+    || grep -qF ".$TLD" "$f" 2>/dev/null \
+    || { [ -n "$cfg" ] && [ -f "$cfg" ] && grep -qE "[a-z0-9-]+\.$TLD" "$cfg" 2>/dev/null; }; then
       printf '%s\n' "$f"
     fi
   done
@@ -308,9 +323,7 @@ plist_label() {
 # no port means 443, `http://` means 80, and anything else names its port outright.
 job_wants_privileged_port() {
   local plist="$1" cfg="" line addr
-  # The config path is whichever ProgramArguments entry looks like a Caddyfile.
-  cfg="$(grep -oE '<string>[^<]*Caddyfile[^<]*</string>' "$plist" 2>/dev/null \
-        | sed -E 's|</?string>||g' | head -1)" || true
+  cfg="$(job_config "$plist")" || true
   [ -n "$cfg" ] && [ -f "$cfg" ] || return 1   # cannot tell — treat as not in the way
 
   # Real address lines only: not comments, and ending in the `{` that opens a site block.
