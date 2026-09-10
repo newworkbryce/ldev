@@ -959,7 +959,31 @@ case "$MODE" in
       boot_rc=0
       sudo launchctl bootstrap system "$PLIST" || boot_rc=$?
       if [ "$boot_rc" = 0 ]; then
-        ui_ok "service started"
+        # "bootstrap succeeded" means launchd ACCEPTED the job, not that Caddy is
+        # serving. Caddy can exit a moment later — an admin port already taken is the
+        # usual reason — and KeepAlive then restarts it into the same failure forever.
+        # Reporting success off the exit code alone is how an install finishes green
+        # with nothing listening, which is the one outcome the operator cannot see.
+        # So ask the socket, and give it a moment to get there first.
+        if [ "${LDEV_SKIP_PORT_PROBE:-0}" = 1 ]; then
+          ui_ok "service bootstrapped (ports not probed)"
+        else
+          serving=0
+          for _ in 1 2 3 4 5 6 7 8 9 10; do
+            if port_busy 443 || port_busy 80; then serving=1; break; fi
+            sleep 0.5
+          done
+          if [ "$serving" = 1 ]; then
+            ui_ok "service started and listening"
+          else
+            ui_warn "$DAEMON_LABEL was accepted by launchd but nothing is listening on 80 or 443."
+            ui_hint "Caddy most likely started and exited. The usual cause is its admin port"
+            ui_hint "($ADMIN_PORT) already being held by another Caddy, which makes it exit at"
+            ui_hint "startup rather than warn. The log says which:"
+            ui_cmd "tail -20 $LOGDIR/caddy.err.log"
+            ui_cmd "sudo launchctl print system/$DAEMON_LABEL | head -20"
+          fi
+        fi
       else
         # launchd's own words for this are "Bootstrap failed: 5: Input/output error",
         # which reads like a malformed plist and sends people to rewrite a file that was

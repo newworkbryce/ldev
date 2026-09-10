@@ -572,7 +572,12 @@ check "the auto install finished"    "$ROOT_RC"                                 
 check "the plist was installed"      "$([ -e "$LD_DIR/com.ldev.caddy.plist" ] && echo yes || echo no)" "yes"
 check "enable ran before bootstrap"  "$(log_order 'launchctl enable system/com.ldev.caddy' 'launchctl bootstrap system')" "yes"
 check "bootout still ran first"      "$(log_order 'launchctl bootout system/com.ldev.caddy' 'launchctl enable system/com.ldev.caddy')" "yes"
-check "the service was reported up"  "$(saw_root 'service started')" "yes"
+# Only bootstrap-level success is assertable here: these runs set LDEV_SKIP_PORT_PROBE=1,
+# so the installer cannot ask the socket whether Caddy actually came up, and says so
+# rather than claiming it did. A green "service started and listening" is reserved for a
+# run that really looked.
+check "the service was reported bootstrapped" "$(saw_root 'service bootstrapped')" "yes"
+check "it did not claim to be listening"      "$(saw_root 'and listening')"         "no"
 
 echo "--- installer: a failed bootstrap is diagnosed, not passed through"
 LDEV_TEST_BOOTSTRAP_RC=5
