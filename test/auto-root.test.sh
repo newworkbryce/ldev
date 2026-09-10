@@ -27,20 +27,20 @@ echo DASHBOARD   > "$DASH/index.html"
 pass=0; fail=0
 check() { if [ "$2" = "$3" ]; then echo "  ok   $1 -> $2"; pass=$((pass+1)); else echo "  FAIL $1: got '$2' want '$3'"; fail=$((fail+1)); fi; }
 
-# Auto mode signs its on-demand certificates with mkcert's root, so the template carries
-# that path. Without mkcert there is no root to point at and Caddy refuses the config at
-# provision time — which is a missing tool, not a broken template, so skip rather than fail.
-MKROOT="$(mkcert -CAROOT 2>/dev/null || true)"
-if [ -z "$MKROOT" ] || [ ! -f "$MKROOT/rootCA.pem" ]; then
-  echo "  skip everything (mkcert has no root CA on this machine)"
-  rm -rf "$TMP"; echo; echo "passed=$pass failed=$fail"; exit 0
-fi
+# Both splice points have to be filled, or the placeholder survives into the rendered file
+# and Caddy reads it as a site address. Neither is exercised here: no proxied sites, and no
+# pki block, which is the same shape a machine without mkcert renders — so this test needs
+# mkcert no more than that machine does.
+: > "$TMP/blocks"
+: > "$TMP/ca"
 
 sed -e "s|__TLD__|ldev|g" -e "s|__SITES__|$SITES|g" -e "s|__DASHBOARD__|$DASH|g" \
     -e "s|__PHP_FPM__|127.0.0.1:9000|g" -e "s|__ADMIN_PORT__|12019|g" \
-    -e "s|__MKCERT_ROOT__|$MKROOT|g" \
     -e "s|__ASK_PORT__|12018|g" -e "s|__LOGDIR__|$TMP/logs|g" \
-    "$REPO/templates/Caddyfile.auto.tmpl" > "$TMP/Caddyfile"
+    "$REPO/templates/Caddyfile.tmpl" \
+  | awk -v f="$TMP/blocks" '$0 == "__PROXY_SITES__" { while ((getline line < f) > 0) print line; next } { print }' \
+  | awk -v f="$TMP/ca" '$0 == "__LOCAL_CA__" { while ((getline line < f) > 0) print line; next } { print }' \
+  > "$TMP/Caddyfile"
 
 if grep -q '__[A-Z_]*__' "$TMP/Caddyfile"; then
   echo "  FAIL unrendered placeholders:"; grep -o '__[A-Z_]*__' "$TMP/Caddyfile" | sort -u | sed 's/^/       /'; fail=$((fail+1))

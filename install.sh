@@ -2,11 +2,15 @@
 #
 # ldev — install a wildcard local-development TLD on macOS.
 #
-# Interactive by default: arrow-key menus, a review screen you can go back into,
-# and every root-owned change announced before it happens. Everything it writes
-# is listed at the end.
+#   ./install.sh                 interactive
+#   ./install.sh --defaults      accept every default, prompt for nothing
+#   ./install.sh --tld test --sites ~/Code --yes
+#   ./install.sh --skip-dns      leave /etc/resolver and dnsmasq alone
+#   ./install.sh --proxy-fallback yes   serve a proxied site's build when it is offline
+#   ./install.sh --plain         no menus, colour or emoji (same as NO_COLOR=1)
 #
-# Run ./install.sh --help for the flags.
+# Everything it writes is listed at the end, and every root-owned change is
+# announced before it happens.
 
 set -euo pipefail
 
@@ -14,87 +18,55 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BREW_PREFIX="$(brew --prefix 2>/dev/null || echo /opt/homebrew)"
 CONFIG_FILE="$HOME/.config/ldev/config"
 
-# shellcheck source=lib/tui.sh
-. "$REPO_DIR/lib/tui.sh"
-
 # Defaults. Every one of these is overridable by flag or prompt.
 TLD="ldev"
 SITES="$HOME/Sites"
-MODE=""                       # auto | persite
-MODE_FROM_FLAG=0
-TLD_FROM_FLAG=0
-SITES_FROM_FLAG=0
-DO_SWITCH=0                   # --switch: take an existing, incompatible setup down first
-DO_UNINSTALL=0                # --uninstall: remove what ldev installed, then stop
 SKIP_DNS=0                    # --skip-dns: leave /etc/resolver and dnsmasq alone
 PHP_FPM="127.0.0.1:9000"
-ADMIN_PORT="2019"             # persite: base of the admin-port run (2019, 2020, ...)
-SITE_PORT_BASE="8443"         # persite: base of the site-port run (8443, 8444, ...)
+ADMIN_PORT="2019"           # the wildcard server's own admin API
+SITE_PORT_BASE="8443"       # base of the run a standalone site's port is taken from
 ASK_PORT="2018"
+PROXY_FALLBACK=""             # yes | no — serve a proxied site's build when it is offline
 LOGDIR="$HOME/Library/Logs/ldev"
 ASSUME_YES=0
 USE_DEFAULTS=0
 
-usage() {
-  cat <<EOF
-ldev installer — a wildcard local-development TLD for macOS
+# Named once, because the review screen lists it before the install step writes it, and
+# the two must not be able to disagree about where it goes.
+DAEMON_LABEL="com.ldev.caddy"
+DAEMON_PLIST="/Library/LaunchDaemons/$DAEMON_LABEL.plist"
 
-  ./install.sh                      interactive (arrow keys, review screen)
-  ./install.sh --defaults           accept every default, prompt for nothing
-  ./install.sh --tld test --sites ~/Code --mode auto --yes
-  ./install.sh --mode persite --skip-dns
+# ---------------------------------------------------------------- output helpers
+#
+# The installer draws through lib/tui.sh: arrow-key menus, colour, emoji, and a prompt
+# that is visibly a prompt. `say`, `step` and `warn` are kept as the names the rest of
+# this file already calls, so the logic below is untouched by the change in presentation
+# — there is one installer, not a pretty one and a plain one that drift apart.
+#
+# Everything degrades in one direction. No terminal, --plain, NO_COLOR or TERM=dumb and
+# every function still returns the answer it would have returned interactively.
 
-Options
-  --tld <name>       local TLD, one label, no dot          (default: $TLD)
-  --sites <dir>      directory holding your sites          (default: $SITES)
-  --mode <mode>      auto | persite                        (default: asked)
-  --php-fpm <addr>   PHP-FPM address                       (default: $PHP_FPM)
-  --skip-dns         leave /etc/resolver and dnsmasq alone
-  --switch           take an existing, incompatible setup down first
-  --uninstall        remove what ldev installed, then stop
-  -y, --yes          answer yes to every optional step
-  --defaults         take every default and imply --yes
-  --plain            no menus, colour or emoji (also: NO_COLOR=1)
-  -h, --help         this
-EOF
-}
-
-# ---------------------------------------------------------------- arguments
-
-while [ $# -gt 0 ]; do
-  case "$1" in
-    --tld)      TLD="${2:?--tld needs a value}"; TLD_FROM_FLAG=1; shift 2 ;;
-    --sites)    SITES="${2:?--sites needs a value}"; SITES_FROM_FLAG=1; shift 2 ;;
-    --mode)     MODE="${2:?--mode needs a value}"; MODE_FROM_FLAG=1; shift 2 ;;
-    --php-fpm)  PHP_FPM="${2:?--php-fpm needs a value}"; shift 2 ;;
-    --yes|-y)   ASSUME_YES=1; shift ;;
-    --switch)   DO_SWITCH=1; shift ;;
-    --uninstall) DO_UNINSTALL=1; shift ;;
-    --skip-dns) SKIP_DNS=1; shift ;;
-    --defaults) USE_DEFAULTS=1; ASSUME_YES=1; shift ;;
-    --plain)    LDEV_PLAIN=1; export LDEV_PLAIN; shift ;;
-    -h|--help)  usage; exit 0 ;;
-    *)          printf 'error: unknown option: %s (try --help)\n' "$1" >&2; exit 1 ;;
-  esac
-done
-
-# --defaults means nobody is at the keyboard, so there is nothing to draw.
-[ "$USE_DEFAULTS" = 1 ] && { LDEV_PLAIN=1; export LDEV_PLAIN; }
-
+# shellcheck source=lib/tui.sh
+. "$REPO_DIR/lib/tui.sh"
 tui_init
 
-die() { printf '\n %s %s%s%s\n' "$G_NO" "$C_RED" "$*" "$C_R" >&2; exit 1; }
+B="$C_B"; DIM="$C_DIM"; R="$C_R"
+GRN="$C_GRN"; YEL="$C_YEL"; RED="$C_RED"
 
-[ "$(uname -s)" = "Darwin" ] || die "this installer targets macOS; it uses /etc/resolver and launchd."
+say()  { printf '%s\n' "$*"; }
+step() { ui_step "$G_GEAR" "$*"; }
+warn() { ui_warn "$*"; }
+die()  { printf '\n %s %s%s%s\n' "$G_NO" "$C_RED" "$*" "$C_R" >&2; exit 1; }
 
 # ask <prompt> <default> [hint] -> the answer in ANSWER; 1 at end of input.
 #
-# The answer arrives in a variable rather than on stdout, and callers must not
-# wrap this in $(...). Two reasons, both of which cost a working installer once:
-# the prompt itself is printed on stdout, so capturing the output captures the
-# prompt as part of the answer and every validation loop then rejects the value
-# the user just typed; and a command substitution is a subshell, so TUI_EOF set
-# inside it would never reach the loop that has to stop when input runs out.
+# The answer arrives in a variable rather than on stdout, and callers must NOT wrap this
+# in $(...). Two reasons, both of which cost a working installer once: the prompt itself
+# is printed on stdout, so capturing the output captures the prompt as part of the answer
+# and every validation loop then rejects the value the user just typed; and a command
+# substitution is a subshell, so the end-of-input flag set inside it never reaches the
+# loop that has to stop when input runs out. That combination span at 100% CPU printing a
+# rejection tens of thousands of times, with every word of it swallowed by the capture.
 ANSWER=""
 ask() {
   local rc=0
@@ -109,10 +81,10 @@ ask() {
 #
 # This used to return 0 — yes — when stdin was not a terminal, which made every unattended run
 # approve things a human was being asked about, `sudo mkdir /etc/resolver` among them. Combined
-# with `set -e` above, the consequence was worse than a wrong answer: sudo has no tty to prompt
-# on, fails, and the script dies at that line. The config file is written 150 lines later, so a
-# headless run could only ever produce a half-configured machine — and `--defaults`, whose own
-# help says "prompt for nothing", hit exactly that.
+# with `set -e` two lines up, the consequence was worse than a wrong answer: sudo has no tty to
+# prompt on, fails, and the script dies at that line. The config file is written 110 lines later,
+# so a headless run could only ever produce a half-configured machine — and `--defaults`, whose
+# own help says "prompt for nothing", hit exactly that.
 #
 # Failing closed costs an unattended run the optional extras (it prints what to run instead, which
 # every `else` branch here already does). `--yes` and `--defaults` still mean yes, explicitly, and
@@ -123,538 +95,49 @@ confirm() { # confirm <question> [yes|no]
   menu_confirm "$1" "${2:-no}"
 }
 
-ui_banner "ldev — a wildcard local-development TLD for macOS" \
-          "Every root-owned change is announced before it happens, and nothing is written until you say go."
+# ---------------------------------------------------------------- arguments
 
-# ---------------------------------------------------------------- 0. what is already here
-#
-# An installer that trusts MODE in its own config file cannot tidy up after itself. That
-# is not hypothetical: a machine set up per-site had this script run again choosing auto.
-# It rewrote MODE=auto and installed the system LaunchDaemon, and left every per-site
-# Caddy running. One process then held 80 and another held 443, https://<tld>/ answered
-# from neither — 000, every time, because whatever held 443 had no site for that host —
-# and the install reported success.
-#
-# So everything below asks the machine, not the config file: which files exist, and what
-# is actually listening. It survives the mode names changing, because it is written in
-# terms of the two topologies that can physically collide — one root Caddy on 80/443, or
-# one Caddy per site on high ports — rather than in terms of the string in MODE.
-#
-# Nothing here writes, starts or stops anything. It only looks.
-
-LAUNCHDAEMONS_DIR="${LDEV_LAUNCHDAEMONS:-/Library/LaunchDaemons}"
-LAUNCHAGENTS_DIR="${LDEV_LAUNCHAGENTS:-$HOME/Library/LaunchAgents}"
-DAEMON_LABEL="com.ldev.caddy"
-DAEMON_PLIST="$LAUNCHDAEMONS_DIR/$DAEMON_LABEL.plist"
-AUTO_CADDYFILE="$HOME/.config/ldev/Caddyfile"
-
-EX_FOUND=0            # any evidence of a previous install at all
-EX_CONFIG=0; EX_CFG_TLD=""; EX_CFG_SITES=""; EX_CFG_MODE=""
-EX_AUTO_FILE=0        # ~/.config/ldev/Caddyfile
-EX_DAEMON=0           # the system LaunchDaemon plist
-EX_SYS_LIVE=0         # something is listening on 80 or 443
-EX_PERSITE_N=0        # per-site Caddyfiles found
-EX_PERSITE_LIVE=0     # at least one per-site port is answering
-EX_PERSITE=()         # the first few of those Caddyfiles
-EX_AGENTS=()          # per-user LaunchAgents that mention ldev
-EX_FOREIGN=()         # root Caddy daemons that are NOT ours
-EX_TLD_ANSWERS=""     # what a request over the TLD actually returned, once asked
-EX_PORTS=""           # human-readable "port: who has it" lines
-EXISTING_ACTION="none"
-
-# Read the config as data. Sourcing it would run whatever is in the file, and the
-# question here is precisely whether this file can be trusted to describe reality.
-cfg_get() { sed -n "s/^$1=//p" "$CONFIG_FILE" 2>/dev/null | tail -1; }
-
-# Both probes are read-only, and both are skipped by LDEV_SKIP_PORT_PROBE=1 — which is
-# what the tests set, because a suite that asked the machine it happens to run on what is
-# listening would assert something different on every machine.
-port_busy() { # port -> 0 when something is listening on it
-  [ "${LDEV_SKIP_PORT_PROBE:-0}" = 1 ] && return 1
-  command -v nc >/dev/null 2>&1 || return 1
-  nc -z 127.0.0.1 "$1" >/dev/null 2>&1
-}
-
-# lsof only shows sockets this user owns, so a root-owned Caddy on 443 is invisible from
-# here. "in use, owner needs sudo to see" is the honest answer in that case; reporting the
-# port as free because we cannot see the owner is how the collision stayed hidden.
-#
-# "or nothing" has to include "and succeeds". lsof exits 1 when it matches no
-# socket it can see, which is the ordinary case here rather than an error — a
-# root-owned Caddy on 80 is invisible to this user. With `set -euo pipefail`,
-# pipefail hands that 1 to the pipeline, `owner="$(port_owner 80)"` takes it as
-# the status of the assignment, and set -e kills the installer where it stands:
-# right after the banner, having asked nothing and said nothing. The detection
-# that exists to find a busy port died on finding one.
-port_owner() { # port -> "caddy pid 42 (root)" or ""
-  [ "${LDEV_SKIP_PORT_PROBE:-0}" = 1 ] && return 0
-  command -v lsof >/dev/null 2>&1 || return 0
-  lsof -nP -iTCP:"$1" -sTCP:LISTEN 2>/dev/null \
-    | awk 'NR > 1 { printf "%s pid %s (%s)", $1, $2, $3; exit }' || true
-}
-
-# Does a request over this TLD actually get answered? -> EX_TLD_ANSWERS
-#
-# Read-only, and deliberately incurious about the answer: any HTTP status at all — 200,
-# 301, 404, 502 — means a server took the request, which is the whole question. A
-# hostname under a machine-local TLD resolving to 127.0.0.1 is not a network request.
-#
-# It asks over HTTP on purpose. The first version asked over HTTPS and reported a
-# healthy machine as dead: this Mac issues a mkcert certificate per host, has none for
-# a name that does not exist, and so failed the TLS handshake — which curl reports as
-# 000, indistinguishable from nothing listening. Over plain HTTP the same host answered
-# 200. Whose certificate it is has nothing to do with whether anything is serving, and
-# bringing TLS into the question only added a way to be wrong.
-#
-# "unknown" is a real answer and stays distinct from "dead": no curl, no resolver yet,
-# or the probe disabled. Saying "could not tell" beats guessing in either direction —
-# guessing is what this function exists to stop.
-tld_answers() {
-  EX_TLD_ANSWERS="unknown"
-  [ "${LDEV_SKIP_PORT_PROBE:-0}" = 1 ] && return 0
-  command -v curl >/dev/null 2>&1 || return 0
-  local code
-  code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 4 \
-            "http://ldev-install-probe.$TLD/" 2>/dev/null || true)"
-  case "$code" in
-    ''|000) EX_TLD_ANSWERS="dead" ;;
-    *)      EX_TLD_ANSWERS="answers" ;;
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --tld)      TLD="${2:?--tld needs a value}"; shift 2 ;;
+    --sites)    SITES="${2:?--sites needs a value}"; shift 2 ;;
+    # There is one serving mode now, so this flag has no answer to accept. Failing loudly
+    # beats ignoring it: a script passing `--mode persite` was asking for an install with
+    # nothing on 80/443, and silently giving it the opposite is worse than stopping.
+    --mode)     die "--mode is gone: ldev now has a single serving mode. A site that needs its own server gets one with 'ldev standalone <name>', fronted by the wildcard server." ;;
+    --php-fpm)  PHP_FPM="${2:?--php-fpm needs a value}"; shift 2 ;;
+    --yes|-y)   ASSUME_YES=1; shift ;;
+    --proxy-fallback) PROXY_FALLBACK="${2:?--proxy-fallback needs yes or no}"; shift 2 ;;
+    --skip-dns) SKIP_DNS=1; shift ;;
+    --defaults) USE_DEFAULTS=1; ASSUME_YES=1; shift ;;
+    --plain)    LDEV_PLAIN=1; export LDEV_PLAIN; shift ;;
+    -h|--help)  sed -n '3,$p' "$0" | sed -n '/^#/!q; s/^# \{0,1\}//p'; exit 0 ;;
+    *)          die "unknown option: $1 (try --help)" ;;
   esac
-  return 0
-}
+done
 
-# The ports a per-site Caddyfile claims: the address on a site block, and the admin port.
-# Finding none is an ordinary answer, so — as with port_owner above — the grep's exit 1
-# must not become this function's, or pipefail and set -e turn "this site names no port"
-# into a dead installer.
-site_ports_of() {
-  grep -oE '[A-Za-z0-9_.*-]+:[0-9]{2,5}[[:space:]]*\{' "$1" 2>/dev/null | grep -oE '[0-9]+' | head -2 || true
-  grep -oE 'admin[[:space:]]+[A-Za-z0-9_.*-]*:[0-9]{2,5}' "$1" 2>/dev/null | grep -oE '[0-9]+$' || true
-  return 0
-}
-
-detect_existing() {
-  local f d p owner dirs=()
-
-  if [ -f "$CONFIG_FILE" ]; then
-    EX_CONFIG=1
-    EX_CFG_TLD="$(cfg_get TLD)"
-    EX_CFG_SITES="$(cfg_get SITES)"
-    EX_CFG_MODE="$(cfg_get MODE)"
-  fi
-  [ -f "$AUTO_CADDYFILE" ] && EX_AUTO_FILE=1
-  [ -f "$DAEMON_PLIST" ]   && EX_DAEMON=1
-
-  # Any OTHER root Caddy, not just ours.
-  #
-  # Looking only for com.ldev.caddy is how this missed the thing it was written to
-  # catch. On a real machine 80 and 443 were held by sh.brew.caddy (from `sudo brew
-  # services start caddy`) and com.bryce.caddy-matsu, a hand-written daemon. Because
-  # neither is our label, the report said "no system LaunchDaemon" while root plainly
-  # held both ports, and then offered to take down com.ldev.caddy — which did not
-  # exist. Accepting that would have removed nothing and added a second root Caddy
-  # fighting for 80/443: exactly the collision this section exists to prevent.
-  #
-  # So ask what a Caddy daemon looks like, not what ours is called.
-  for f in "$LAUNCHDAEMONS_DIR"/*.plist; do
-    [ -f "$f" ] || continue
-    [ "$f" = "$DAEMON_PLIST" ] && continue
-    grep -qs -e 'caddy' -e 'Caddy' "$f" || continue
-    EX_FOREIGN+=("$f")
-  done
-
-  # Both the directory this run would use and the one the old config named: a switch of
-  # sites directory must not hide the sites the old topology is still serving.
-  dirs=("$SITES")
-  if [ -n "$EX_CFG_SITES" ] && [ "$EX_CFG_SITES" != "$SITES" ]; then dirs+=("$EX_CFG_SITES"); fi
-  for d in "${dirs[@]}"; do
-    for f in "$d"/*/Caddyfile; do
-      [ -f "$f" ] || continue
-      EX_PERSITE_N=$((EX_PERSITE_N + 1))
-      if [ "${#EX_PERSITE[@]}" -lt 8 ]; then EX_PERSITE+=("$f"); fi
-    done
-  done
-
-  for f in "$LAUNCHAGENTS_DIR"/*.plist; do
-    [ -f "$f" ] || continue
-    case "$f" in *ldev*) EX_AGENTS+=("$f"); continue ;; esac
-    if grep -qs -e 'ldev' -e "$SITES" "$f"; then EX_AGENTS+=("$f"); fi
-  done
-
-  if [ "$EX_CONFIG" = 1 ] || [ "$EX_AUTO_FILE" = 1 ] || [ "$EX_DAEMON" = 1 ] \
-     || [ "$EX_PERSITE_N" -gt 0 ] || [ "${#EX_AGENTS[@]}" -gt 0 ] \
-     || [ "${#EX_FOREIGN[@]}" -gt 0 ]; then
-    EX_FOUND=1
-  else
-    return 0                       # a clean machine: ask the machine nothing further
-  fi
-
-  for p in 80 443; do
-    if port_busy "$p"; then
-      EX_SYS_LIVE=1
-      owner="$(port_owner "$p")"
-      [ -n "$owner" ] || owner="in use, owner needs sudo to see"
-      EX_PORTS="$EX_PORTS$p $owner
-"
-    fi
-  done
-
-  if [ "${#EX_PERSITE[@]}" -gt 0 ]; then
-    for f in "${EX_PERSITE[@]}"; do
-      for p in $(site_ports_of "$f"); do
-        if port_busy "$p"; then
-          EX_PERSITE_LIVE=1
-          owner="$(port_owner "$p")"
-          [ -n "$owner" ] || owner="in use, owner needs sudo to see"
-          EX_PORTS="$EX_PORTS$p $owner  <- $f
-"
-        fi
-      done
-    done
-  fi
-  # A LaunchAgent is per-site scaffolding whether or not it happens to be loaded now:
-  # leaving it behind means the old topology comes back at the next login.
-  if [ "${#EX_AGENTS[@]}" -gt 0 ]; then EX_PERSITE_LIVE=1; fi
-  return 0
-}
-
-# What the two topologies look like when they are up. Named as "system" and "per-site"
-# rather than as modes, because these are the things that fight over a port.
-sys_installed()     { [ "$EX_DAEMON" = 1 ] || [ "$EX_SYS_LIVE" = 1 ]; }
-persite_installed() { [ "$EX_PERSITE_N" -gt 0 ] || [ "${#EX_AGENTS[@]}" -gt 0 ]; }
-
-# True when what this run is about to install and what is already up would fight over the
-# same ports. Per-site Caddyfiles sitting on disk with nothing running are untidy but not
-# a conflict; a loaded LaunchAgent or a listening port is.
-topology_conflict() {
-  if [ "$MODE" = "auto" ]; then
-    [ "$EX_PERSITE_LIVE" = 1 ]
-  else
-    sys_installed
-  fi
-}
-
-# The evidence, printed before any refusal: "what is running" is exactly what the failed
-# install never said.
-show_live() {
-  if [ "$MODE" = "auto" ]; then
-    local f
-    [ "${#EX_AGENTS[@]}" -gt 0 ] && for f in "${EX_AGENTS[@]}"; do ui_item "LaunchAgent $f"; done
-    [ "$EX_PERSITE_N" -gt 0 ] && ui_item "$EX_PERSITE_N per-site Caddyfile(s) under $SITES"
-  else
-    [ "$EX_DAEMON" = 1 ] && ui_item "$DAEMON_PLIST  ${C_DIM}(system LaunchDaemon)$C_R"
-    [ "$EX_SYS_LIVE" = 1 ] && ui_item "port 80/443 answered while this run started"
-  fi
-  if [ -n "$EX_PORTS" ]; then
-    printf '%s' "$EX_PORTS" | while IFS= read -r line; do [ -n "$line" ] && ui_item "port $line"; done
-  fi
-  return 0
-}
-
-show_existing() {
-  printf '\n %s %sldev is already installed here%s\n\n' "$G_LIST" "$C_B" "$C_R"
-  if [ "$EX_CONFIG" = 1 ]; then
-    ui_kv "Config"  "$CONFIG_FILE"
-    ui_kv "It says" "TLD .${EX_CFG_TLD:-?}  ${C_DIM}$G_DOT${C_R}  sites ${EX_CFG_SITES:-?}  ${C_DIM}$G_DOT${C_R}  mode ${EX_CFG_MODE:-?}"
-  else
-    ui_kv "Config"  "none at $CONFIG_FILE"
-  fi
-  printf '\n %s%sWhat is actually on this machine%s\n\n' "$C_B" "" "$C_R"
-  if [ "$EX_DAEMON" = 1 ]; then
-    ui_item "$DAEMON_PLIST  ${C_DIM}(system LaunchDaemon, root)$C_R"
-  else
-    ui_item "no system LaunchDaemon at $DAEMON_PLIST"
-  fi
-  if [ "${#EX_FOREIGN[@]}" -gt 0 ]; then
-    ui_item "${#EX_FOREIGN[@]} other root Caddy daemon(s) — ${C_B}not installed by ldev${C_R}:"
-    local g
-    for g in "${EX_FOREIGN[@]}"; do ui_hint "$g"; done
-  fi
-  [ "$EX_AUTO_FILE" = 1 ] && ui_item "$AUTO_CADDYFILE"
-  if [ "$EX_PERSITE_N" -gt 0 ]; then
-    ui_item "$EX_PERSITE_N per-site Caddyfile(s):"
-    local f
-    for f in "${EX_PERSITE[@]}"; do ui_hint "$f"; done
-    [ "$EX_PERSITE_N" -gt "${#EX_PERSITE[@]}" ] \
-      && ui_hint "… and $((EX_PERSITE_N - ${#EX_PERSITE[@]})) more"
-  fi
-  if [ "${#EX_AGENTS[@]}" -gt 0 ]; then
-    ui_item "${#EX_AGENTS[@]} per-user LaunchAgent(s):"
-    for f in "${EX_AGENTS[@]}"; do ui_hint "$f"; done
-  fi
-  if [ -n "$EX_PORTS" ]; then
-    ui_item "listening now:"
-    printf '%s' "$EX_PORTS" | while IFS= read -r f; do [ -n "$f" ] && ui_hint "$f"; done
-  elif [ "${LDEV_SKIP_PORT_PROBE:-0}" = 1 ]; then
-    ui_item "ports not probed (LDEV_SKIP_PORT_PROBE=1)"
-  else
-    ui_item "nothing listening on 80 or 443"
-  fi
-  # The exact state the reported defect left behind — but asked, not assumed.
-  #
-  # This used to declare "https://<name>.$TLD returns 000" whenever both topologies
-  # were present. On a machine where they coexist correctly — a wildcard front door on
-  # 80/443 and per-site servers on 8443+, which is a documented arrangement, not an
-  # accident — that told the operator their working setup was broken. Structure does
-  # not prove the failure; a request does. So make one, and say what came back.
-  if sys_installed && persite_installed; then
-    printf '\n'
-    tld_answers
-    case "$EX_TLD_ANSWERS" in
-      answers)
-        ui_info "both ways of serving are installed at once, and they are coexisting."
-        ui_hint "A request over .$TLD is answered, so whatever holds 443 does serve these"
-        ui_hint "hosts. Nothing here is broken; installing a second server on 80/443 would"
-        ui_hint "break it."
-        ;;
-      dead)
-        ui_warn "both ways of serving are installed at once, and nothing answers."
-        ui_hint "One process holds 80 and another holds 443, and a request over .$TLD came"
-        ui_hint "back with nothing — this is the state the two-topology collision produces."
-        ;;
-      *)
-        ui_warn "both ways of serving are installed at once."
-        ui_hint "Whether they collide could not be tested from here, so this is a warning"
-        ui_hint "rather than a diagnosis: a second server on 80/443 is the risk."
-        ;;
-    esac
-  fi
-  printf '\n'
-}
-
-# launchd remembers, per label, that a service was disabled — in the system domain, in a
-# store that outlives `launchctl bootout` AND the plist itself. The next bootstrap of that
-# label then fails with "Bootstrap failed: 5: Input/output error", which names neither the
-# label nor the word "disabled" and reads exactly like a broken plist; it cost two installs
-# before anyone thought to run `launchctl print-disabled system`. `enable` clears the
-# record, so ldev runs it before every bootstrap and again on removal — the label is left
-# clean whichever way the run ends. A failure here is never fatal: it is a tidy-up, and
-# the bootstrap below reports its own outcome.
-launchd_enable_label() {
-  sudo launchctl enable "system/$DAEMON_LABEL" >/dev/null 2>&1 \
-    || ui_hint "could not clear launchd's disabled record for $DAEMON_LABEL — continuing"
-  return 0
-}
-
-# Stop and remove the system Caddy service. Returns 1 if it is still there afterwards, so
-# callers can refuse to install the other topology on top of a live one.
-takedown_system() {
-  ui_info "Taking the system Caddy service down: it owns ports 80 and 443."
-  if ! confirm "Stop and remove $DAEMON_LABEL? (sudo)" "yes"; then
-    ui_warn "left running. Run these, then start this installer again:"
-    ui_cmd "sudo launchctl bootout system/$DAEMON_LABEL"
-    ui_cmd "sudo launchctl enable system/$DAEMON_LABEL"
-    ui_cmd "sudo rm -f $DAEMON_PLIST"
-    return 1
-  fi
-  sudo launchctl bootout "system/$DAEMON_LABEL" >/dev/null 2>&1 || true
-  launchd_enable_label
-  sudo rm -f "$DAEMON_PLIST" >/dev/null 2>&1 || true
-  # Ask the disk rather than the exit status. A takedown that is reported as done and did
-  # not happen is the whole defect: the next step would install the other topology on top
-  # of a service still holding 80 and 443.
-  if [ -e "$DAEMON_PLIST" ]; then
-    ui_warn "$DAEMON_PLIST is still there — the service was not taken down."
-    ui_hint "run these yourself and start the installer again:"
-    ui_cmd "sudo launchctl bootout system/$DAEMON_LABEL"
-    ui_cmd "sudo launchctl enable system/$DAEMON_LABEL"
-    ui_cmd "sudo rm -f $DAEMON_PLIST"
-    return 1
-  fi
-  ui_ok "system service stopped and $DAEMON_PLIST removed"
-  # launchd releases the socket a moment after bootout returns. ldev's own service is
-  # provably gone by now — the plist is — so a port still answering belongs to something
-  # else, and saying which is more use than refusing to continue over it.
-  local p
-  for p in 80 443; do
-    port_busy "$p" || continue
-    sleep 1
-    port_busy "$p" || continue
-    ui_warn "port $p is still answering — that is not ldev's service, it is something else."
-    ui_cmd "sudo lsof -nP -iTCP:$p -sTCP:LISTEN"
-  done
-  EX_DAEMON=0; EX_SYS_LIVE=0
-  return 0
-}
-
-# Take the per-site topology down. The Caddyfiles are the user's own files, so they are
-# only removed if asked for; what must go is anything still holding a port.
-takedown_persite() {
-  local f label p
-  if [ "${#EX_AGENTS[@]}" -gt 0 ]; then
-    ui_info "Unloading ${#EX_AGENTS[@]} per-user LaunchAgent(s)."
-    for f in "${EX_AGENTS[@]}"; do
-      label="$(basename "$f")"; label="${label%.plist}"
-      launchctl bootout "gui/$(id -u)/$label" >/dev/null 2>&1 || true
-      ui_ok "unloaded $label  ${C_DIM}(its plist is left at $f)$C_R"
-    done
-  fi
-  if [ "$EX_PERSITE_LIVE" = 1 ] && [ "${#EX_PERSITE[@]}" -gt 0 ]; then
-    for f in "${EX_PERSITE[@]}"; do
-      for p in $(site_ports_of "$f"); do
-        port_busy "$p" || continue
-        ui_warn "something is still listening on $p (from $f)"
-        ui_hint "if it is a caddy you started by hand, stop it in its own terminal:"
-        ui_cmd "lsof -nP -iTCP:$p -sTCP:LISTEN"
-      done
-    done
-  fi
-  if [ "$EX_PERSITE_N" -gt 0 ]; then
-    ui_info "$EX_PERSITE_N per-site Caddyfile(s) are still on disk. They are yours; ldev"
-    ui_hint "will not serve them any more, and leaves them alone unless you say otherwise."
-    # Deliberately not offered unattended. `--defaults` means yes to everything, and the
-    # one thing a switch must never do on nobody's say-so is delete files a person wrote.
-    if [ "$TUI_INTERACTIVE" = 1 ] && confirm "Delete the per-site Caddyfiles too?" "no"; then
-      for f in "${EX_PERSITE[@]}"; do rm -f "$f" && ui_ok "removed $f"; done
-      EX_PERSITE_N=0; EX_PERSITE=()
-    else
-      ui_skip "per-site Caddyfiles kept"
-    fi
-  fi
-  EX_PERSITE_LIVE=0
-  return 0
-}
-
-# --uninstall, and the "Remove it" entry on the menu below. Removes what ldev installed
-# and nothing else: no site directory and no site content is touched.
-do_uninstall() {
-  local tld="${EX_CFG_TLD:-$TLD}" dnsd="$BREW_PREFIX/etc/dnsmasq.d"
-  printf '\n %s %sRemove ldev%s\n\n' "$G_LIST" "$C_B" "$C_R"
-  ui_item "$DAEMON_PLIST  ${C_DIM}(stopped, then deleted — root)$C_R"
-  ui_item "$AUTO_CADDYFILE"
-  ui_item "$CONFIG_FILE"
-  ui_item "$dnsd/$tld.conf"
-  ui_item "/etc/resolver/$tld  ${C_DIM}(root)$C_R"
-  ui_hint "your sites, their content and their own Caddyfiles are left alone."
-  printf '\n'
-  if ! confirm "Remove these now?" "no"; then die "aborted — nothing was removed."; fi
-
-  if [ "$EX_DAEMON" = 1 ] || [ "$EX_SYS_LIVE" = 1 ]; then
-    sudo launchctl bootout "system/$DAEMON_LABEL" >/dev/null 2>&1 || true
-    # Leave the label enabled: a disabled record here is what makes the NEXT install
-    # fail with launchd's opaque "Bootstrap failed: 5: Input/output error".
-    launchd_enable_label
-    sudo rm -f "$DAEMON_PLIST" >/dev/null 2>&1 || ui_warn "could not remove $DAEMON_PLIST"
-    ui_ok "$DAEMON_LABEL stopped, removed, and left enabled for next time"
-  fi
-  # Report what was actually there. `rm -f` succeeds on a file that never existed, so
-  # reporting from its exit status would claim removals that never happened.
-  local gone
-  for gone in "$AUTO_CADDYFILE" "$CONFIG_FILE" "$dnsd/$tld.conf"; do
-    [ -e "$gone" ] || continue
-    rm -f "$gone" && ui_ok "removed $gone"
-  done
-  rmdir "$HOME/.config/ldev" 2>/dev/null || true
-  if [ -f "/etc/resolver/$tld" ]; then
-    if confirm "Remove /etc/resolver/$tld? (sudo)" "yes"; then
-      sudo rm -f "/etc/resolver/$tld" && ui_ok "removed /etc/resolver/$tld"
-    else
-      ui_warn "left behind — *.${tld} will keep resolving to 127.0.0.1:"
-      ui_cmd "sudo rm -f /etc/resolver/$tld"
-    fi
-  fi
-  if [ "$EX_PERSITE_N" -gt 0 ]; then
-    ui_info "$EX_PERSITE_N per-site Caddyfile(s) were left alone. Delete them yourself if"
-    ui_hint "you want them gone; anything still running keeps its port until you stop it."
-  fi
-  printf '\n'
-  ui_ok "ldev removed"
-  exit 0
-}
-
-# What this run should do about what is already here. The menu is the review screen's
-# style, and — like the review screen — choosing nothing writes nothing.
-choose_existing_action() {
-  # A flag is an answer already given, terminal or not: --uninstall must not be met with a
-  # menu whose default is "update in place".
-  if [ "$DO_UNINSTALL" = 1 ]; then EXISTING_ACTION="uninstall"; return 0; fi
-  if [ "$TUI_INTERACTIVE" != 1 ]; then
-    # Nobody is at the keyboard. Reinstalling in place is safe and is what a repeated
-    # `./install.sh --defaults` means; anything that would change the serving topology
-    # is refused further down unless --switch said so out loud.
-    if [ "$DO_UNINSTALL" = 1 ]; then EXISTING_ACTION="uninstall"
-    elif [ "$DO_SWITCH" = 1 ]; then EXISTING_ACTION="switch"
-    else EXISTING_ACTION="update"; ui_info "updating the existing installation in place (no terminal to ask)."
-    fi
-    return 0
-  fi
-  # --switch on the command line preselects the switch, and still shows the menu: the
-  # user asked for it, so it is the default rather than the only option.
-  local d=0
-  [ "$DO_SWITCH" = 1 ] && d=1
-  menu_select "There is an ldev installation here already. What should this run do?" "$d" \
-    "$G_ROCKET Update it in place" \
-"Keep serving sites the way this machine already serves them.
-Regenerates what ldev writes and restarts it." \
-    "$G_BOLT Switch how sites are served" \
-"Take the current setup down — the service, the LaunchAgents, the
-processes holding the ports — and then install the other one.
-This is the one to pick when a previous run left both live." \
-    "$G_GEAR Repair it" \
-"Keep every existing answer, rewrite the generated files, restart.
-For an install that stopped half way." \
-    "$G_NO Remove it" \
-"Stop and delete what ldev installed: the service, the generated
-config, the resolver entry. Your sites are not touched." \
-    "$G_NO Quit" \
-"Change nothing." \
-    || die "aborted — nothing was written."
-  case "$MENU_CHOICE" in
-    0) EXISTING_ACTION="update" ;;
-    1) EXISTING_ACTION="switch" ;;
-    2) EXISTING_ACTION="repair" ;;
-    3) EXISTING_ACTION="uninstall" ;;
-    4) die "aborted — nothing was written." ;;
-  esac
-  return 0
-}
-
-detect_existing
-if [ "$EX_FOUND" = 1 ]; then
-  show_existing
-  choose_existing_action
-  [ "$EXISTING_ACTION" = "uninstall" ] && do_uninstall
-  # Whatever the old install answered is the starting point for this one, unless a flag
-  # on this command line says otherwise.
-  if [ "$EX_CONFIG" = 1 ]; then
-    [ "$TLD_FROM_FLAG"   = 1 ] || [ -z "$EX_CFG_TLD" ]   || TLD="$EX_CFG_TLD"
-    [ "$SITES_FROM_FLAG" = 1 ] || [ -z "$EX_CFG_SITES" ] || SITES="$EX_CFG_SITES"
-    if [ "$MODE_FROM_FLAG" != 1 ] && [ "$EXISTING_ACTION" != "switch" ]; then
-      case "$EX_CFG_MODE" in auto|persite) MODE="$EX_CFG_MODE" ;; esac
-    fi
-  fi
-  # What is running beats what the config claims: a config saying auto on a machine that
-  # only has per-site servers up would otherwise reinstall the wrong half.
-  if [ "$EXISTING_ACTION" != "switch" ] && [ "$MODE_FROM_FLAG" != 1 ]; then
-    if [ "$EX_DAEMON" = 1 ] && [ "$EX_PERSITE_LIVE" != 1 ]; then MODE="auto"
-    elif [ "$EX_DAEMON" != 1 ] && [ "$EX_PERSITE_LIVE" = 1 ]; then MODE="persite"
-    fi
-  fi
-elif [ "$DO_UNINSTALL" = 1 ]; then
-  die "nothing to uninstall — no ldev config, service, LaunchAgent or per-site Caddyfile found."
-fi
+[ "$(uname -s)" = "Darwin" ] || die "this installer targets macOS; it uses /etc/resolver and launchd."
 
 # ---------------------------------------------------------------- 1. questions
 
-ui_step "$G_GEAR" "Configuration"
+step "Configuration"
 
 valid_tld() { [[ "$1" =~ ^[a-z0-9-]+$ ]]; }
 
 # .dev and .app are real, HSTS-preloaded TLDs: browsers force HTTPS to the public
-# internet and the local site becomes unreachable in confusing ways. .local belongs
+# internet and your local site becomes unreachable in confusing ways. .local belongs
 # to mDNS/Bonjour and will fight with it.
 reserved_tld() {
   case "$1" in com|net|org|dev|app|local|localhost) return 0 ;; esac
   return 1
 }
 
+# Asked as a menu, then a validated prompt for anything else. Nearly everyone takes the
+# default, and an arrow-key list is both quicker and — the reason it is here — visibly a
+# question: a bare prompt line in a wall of install output does not read as one, and
+# people sit waiting at a question they never noticed was asked.
 edit_tld() {
   local candidate
-
-  # Offer the usual answers as a menu before falling back to typing. Nearly everyone
-  # takes the default, and an arrow-key list is both faster and — the reason it is
-  # here — visibly a question, where a bare prompt line in a wall of install output
-  # is not.
   if [ "$TUI_INTERACTIVE" = 1 ]; then
     menu_select "Which local TLD?" 0 \
       "$G_BOLT .$TLD" "the default $G_DOT sites at https://<name>.$TLD" \
@@ -666,12 +149,10 @@ edit_tld() {
       1) TLD="test"; return 0 ;;
     esac
   fi
-
   while :; do
-    ask "Local TLD" "$TLD" "one label, no dot — sites will live at https://<name>.<tld>" \
+    ask "Local TLD" "$TLD" "one label, no dot — sites live at https://<name>.<tld>" \
       || die "aborted — end of input while asking for the TLD."
-    candidate="$ANSWER"
-    candidate="${candidate#.}"                     # tolerate ".ldev"
+    candidate="${ANSWER#.}"                       # tolerate ".ldev"
     if ! valid_tld "$candidate"; then
       if [ "$TUI_INTERACTIVE" = 1 ]; then
         ui_bad "'$candidate' is not one label of a-z, 0-9 and dashes."
@@ -680,7 +161,7 @@ edit_tld() {
       die "TLD must be one label of a-z, 0-9 and dashes — got '$candidate'."
     fi
     if reserved_tld "$candidate"; then
-      ui_warn "'$candidate' is a real or reserved TLD and will collide with public DNS or mDNS."
+      warn "'$candidate' is a real or reserved TLD and will collide with public DNS or mDNS."
       if confirm "Use '.$candidate' anyway?" "no"; then TLD="$candidate"; return 0; fi
       [ "$TUI_INTERACTIVE" = 1 ] || die "aborted — pick something like 'ldev' or 'test'."
       continue
@@ -690,17 +171,16 @@ edit_tld() {
   done
 }
 
-# The sites directory is nearly always one of a handful of places, so offer those
-# and keep the free-text field for everyone else.
+# The sites directory is nearly always one of a handful of places, so offer the ones that
+# exist and keep a free-text field for everyone else.
 edit_sites() {
   if [ "$TUI_INTERACTIVE" != 1 ]; then
     ask "Directory holding your sites" "$SITES" || die "aborted — end of input."
-    SITES="$ANSWER"
-    SITES="${SITES/#\~/$HOME}"
+    SITES="${ANSWER/#\~/$HOME}"
     return 0
   fi
-  local cands=() c seen args=()
-  for c in "$SITES" "$HOME/Sites" "$HOME/Code" "$HOME/Projects" "$HOME/Developer" "$HOME/Documents/Sites"; do
+  local cands=() c existing seen args=()
+  for c in "$SITES" "$HOME/Sites" "$HOME/Code" "$HOME/Projects" "$HOME/Developer"; do
     [ "$c" = "$SITES" ] || [ -d "$c" ] || continue
     seen=0
     for existing in "${cands[@]:-}"; do [ "$existing" = "$c" ] && seen=1; done
@@ -725,133 +205,69 @@ edit_sites() {
   return 0
 }
 
-edit_mode() {
-  local d=0
-  case "$MODE" in persite) d=1 ;; esac
-  menu_select "How should sites be served?" "$d" \
-    "$G_ROCKET auto      one Caddy owns 80 and 443    (recommended)" \
-"One Caddy serves every *.$TLD name. A directory at $SITES/<name>
-is served at https://<name>.$TLD, with a certificate issued on first
-request; unknown names fall back to the dashboard.
-Adding a site is creating a folder." \
-    "$G_PKG persite   one Caddy per site, high ports" \
-"One Caddy per site on its own port pair (8443, 8444 ...). Nothing
-owns 443, and each site needs its own Caddyfile and certificate.
-Choose this to preserve an existing per-site setup." \
-    || die "aborted."
-  case "$MENU_CHOICE" in
-    0) MODE="auto" ;;
-    1) MODE="persite" ;;
-  esac
-}
-
-edit_php() {
-  if [ "$TUI_INTERACTIVE" = 1 ]; then
-    local sock="" s
-    # Homebrew's php-fpm listens on 9000 by default, but a per-version install often
-    # has a socket instead. Offering one that exists beats asking someone to remember
-    # the path.
-    for s in "$BREW_PREFIX/var/run/php-fpm.sock" "$BREW_PREFIX/var/run/php/php-fpm.sock"; do
-      [ -S "$s" ] && { sock="$s"; break; }
-    done
-    if [ -n "$sock" ]; then
-      menu_select "How does PHP listen?" 0 \
-        "$G_GEAR 127.0.0.1:9000" "the Homebrew php-fpm default" \
-        "$G_GEAR $sock" "a socket that exists on this machine" \
-        "$G_PENCIL Type a different one…" "host:port, or a unix socket path" \
-        || die "aborted."
-      case "$MENU_CHOICE" in
-        0) PHP_FPM="127.0.0.1:9000"; return 0 ;;
-        1) PHP_FPM="$sock"; return 0 ;;
-      esac
-    else
-      menu_select "How does PHP listen?" 0 \
-        "$G_GEAR 127.0.0.1:9000" "the Homebrew php-fpm default" \
-        "$G_PENCIL Type a different one…" "host:port, or a unix socket path" \
-        || die "aborted."
-      [ "$MENU_CHOICE" = 0 ] && { PHP_FPM="127.0.0.1:9000"; return 0; }
-    fi
-  fi
-  ask "PHP-FPM address" "$PHP_FPM" "host:port, or a unix socket path" \
-    || die "aborted — end of input."
-  PHP_FPM="$ANSWER"
-}
-
-if [ "$USE_DEFAULTS" != 1 ] && [ "$EXISTING_ACTION" != "repair" ]; then
+if [ "$USE_DEFAULTS" != 1 ]; then
   edit_tld
   edit_sites
-elif [ "$EXISTING_ACTION" = "repair" ]; then
-  ui_info "Repairing: keeping .$TLD, $SITES and mode ${MODE:-auto} exactly as they are."
-fi
-TLD="${TLD#.}"
-SITES="${SITES/#\~/$HOME}"
-valid_tld "$TLD" || die "TLD must be one label of a-z, 0-9 and dashes — got '$TLD'."
-if [ "$USE_DEFAULTS" = 1 ] && reserved_tld "$TLD"; then
-  ui_warn "'$TLD' is a real or reserved TLD and will collide with public DNS or mDNS."
 fi
 
-if [ -z "$MODE" ]; then
-  if [ "$TUI_INTERACTIVE" = 1 ]; then edit_mode; else MODE="auto"; fi
+TLD="${TLD#.}"                                  # tolerate ".ldev"
+SITES="${SITES/#\~/$HOME}"                      # expand a typed ~
+
+valid_tld "$TLD" || die "TLD must be one label of a-z, 0-9 and dashes — got '$TLD'."
+if [ "$USE_DEFAULTS" = 1 ] && reserved_tld "$TLD"; then
+  warn "'$TLD' is a real or reserved TLD and will collide with public DNS or mDNS."
 fi
-case "$MODE" in
-  auto|persite) ;;
-  # Named explicitly rather than folded into the catch-all: a script that still passes
-  # --mode apache should be told the mode is gone, not told it is a typo.
-  #
-  # It is gone for two reasons, found independently on two branches. It never worked —
-  # the arm rendered templates/httpd-vhosts.tmpl, which exists in no revision of this
-  # repo, so `set -e` killed the install there. And it was never a fit: serving the TLD
-  # from httpd needs a vhost and a certificate per host, which is a different product
-  # from "a folder is a site". `ldev apply` would have had nothing to render and doctor
-  # nothing to check.
-  apache) die "mode 'apache' is not supported — use 'auto', or 'persite' to keep an existing per-site setup." ;;
-  *) die "unknown mode '$MODE' — pick auto or persite." ;;
+
+# A proxied site — `ldev proxy <name> <port>` — points at a dev server the developer starts
+# and stops all day. The question is what to serve when it is NOT running.
+#
+# Neither answer is obviously right, which is why it is asked rather than assumed. Serving
+# the last build keeps the URL working, and shows something arbitrarily stale while looking
+# perfectly alive. Serving the proxy error is honest and tells you the server is down, which
+# is occasionally exactly what you needed to know.
+if [ -z "$PROXY_FALLBACK" ]; then
+  if [ "$USE_DEFAULTS" = 1 ]; then
+    PROXY_FALLBACK="no"
+  else
+    menu_select "When a proxied site's server is not running…" 0 \
+      "$G_WARN Show the proxy error" \
+"You always know the server is down.
+Honest, and occasionally exactly what you needed to know." \
+      "$G_FOLDER Serve that site's last build" \
+"The URL keeps working — and can show something
+arbitrarily stale while looking perfectly alive." \
+      || die "aborted."
+    case "$MENU_CHOICE" in
+      1) PROXY_FALLBACK="yes" ;;
+      *) PROXY_FALLBACK="no" ;;
+    esac
+  fi
+fi
+case "$PROXY_FALLBACK" in
+  yes|no) ;;
+  *) die "--proxy-fallback must be yes or no — got '$PROXY_FALLBACK'." ;;
 esac
 
 DASHBOARD="$REPO_DIR/dashboard/dist"
 
-# ---------------------------------------------------------------- 1b. review
-
+# A review you can go back into, rather than a last chance to say no.
+#
+# Every answer is listed with what it will cause, and each one can be changed without
+# restarting the installer. Nothing has been written at this point, and quitting here
+# leaves the machine exactly as it was found.
 show_summary() {
-  printf '\n %s%s %sReview%s\n\n' "$G_LIST" "" "$C_B" "$C_R"
+  printf '\n %s %s%s%s\n\n' "$G_LIST" "$C_B" "Review" "$C_R"
   ui_kv "TLD"       ".$TLD"
   ui_kv "Sites"     "$SITES"
-  ui_kv "Mode"      "$MODE"
   ui_kv "PHP-FPM"   "$PHP_FPM"
+  ui_kv "Offline"   "$PROXY_FALLBACK  ${C_DIM}(what a proxied site serves when its server is down)$C_R"
   ui_kv "Dashboard" "$DASHBOARD"
-  [ "$EX_FOUND" = 1 ] && ui_kv "Existing"  "$EXISTING_ACTION"
-  if [ "$EX_FOUND" = 1 ] && topology_conflict; then
-    printf '\n %s%sWhat is in the way, and has to go down first%s\n\n' "$C_B" "" "$C_R"
-    if [ "$MODE" = "auto" ]; then
-      [ "${#EX_AGENTS[@]}" -gt 0 ] && ui_item "${#EX_AGENTS[@]} per-user LaunchAgent(s), to be unloaded"
-      [ "$EX_PERSITE_N" -gt 0 ] && ui_item "$EX_PERSITE_N per-site Caddyfile(s) stop being served (kept unless you say otherwise)"
-    else
-      # Only claim to remove what is actually there. Listing our own label
-      # unconditionally is how this offered to take down com.ldev.caddy on a machine
-      # that had never had it, while the daemons really holding 80/443 went unmentioned.
-      if [ "$EX_DAEMON" = 1 ]; then
-        ui_item "$DAEMON_LABEL, to be stopped and removed  ${C_DIM}(root)$C_R"
-      fi
-      if [ "${#EX_FOREIGN[@]}" -gt 0 ]; then
-        ui_item "${C_B}not ours, and not touched${C_R} — take these down yourself if they conflict:"
-        local h
-        for h in "${EX_FOREIGN[@]}"; do ui_hint "$h"; done
-      fi
-      if [ "$EX_DAEMON" = 0 ] && [ "${#EX_FOREIGN[@]}" -eq 0 ] && [ "$EX_SYS_LIVE" = 1 ]; then
-        ui_item "something root-owned holds 80/443 that ldev did not install and cannot name"
-        ui_hint "sudo lsof -nP -iTCP:443 -sTCP:LISTEN"
-      fi
-    fi
-  fi
-  printf '\n %s%sWhat this will write%s\n\n' "$C_B" "" "$C_R"
+  printf '\n %s%s%s\n\n' "$C_B" "What this will write" "$C_R"
   ui_item "$CONFIG_FILE"
   ui_item "$BREW_PREFIX/etc/dnsmasq.d/$TLD.conf"
-  [ "$SKIP_DNS" = 1 ] || ui_item "/etc/resolver/$TLD  $C_DIM(root)$C_R"
-  case "$MODE" in
-    auto)    ui_item "$AUTO_CADDYFILE"
-             ui_item "$DAEMON_PLIST  $C_DIM(root)$C_R" ;;
-    persite) ui_item "nothing global — one Caddyfile per site, written by ldev new" ;;
-  esac
+  [ "$SKIP_DNS" = 1 ] || ui_item "/etc/resolver/$TLD  ${C_DIM}(root)$C_R"
+  ui_item "$HOME/.config/ldev/Caddyfile"
+  ui_item "$DAEMON_PLIST  ${C_DIM}(root)$C_R"
   printf '\n'
 }
 
@@ -860,19 +276,18 @@ if [ "$TUI_INTERACTIVE" = 1 ]; then
     show_summary
     menu_select "Ready?" 0 \
       "$G_OK Install with these settings" "" \
-      "$G_PENCIL Change the TLD"           "currently .$TLD" \
+      "$G_PENCIL Change the TLD"             "currently .$TLD" \
       "$G_PENCIL Change the sites directory" "currently $SITES" \
-      "$G_PENCIL Change the mode"          "currently $MODE" \
-      "$G_PENCIL Change the PHP-FPM address" "currently $PHP_FPM" \
+      "$G_PENCIL Change the offline behaviour" "currently $PROXY_FALLBACK" \
       "$G_NO Quit without changing anything" "" \
       || die "aborted."
     case "$MENU_CHOICE" in
       0) break ;;
       1) edit_tld ;;
       2) edit_sites ;;
-      3) edit_mode ;;
-      4) edit_php ;;
-      5) die "aborted — nothing was written." ;;
+      3) if menu_confirm "Serve a proxied site's last build when it is offline?" "no"; then
+           PROXY_FALLBACK="yes"; else PROXY_FALLBACK="no"; fi ;;
+      4) die "aborted — nothing was written." ;;
     esac
   done
 else
@@ -880,88 +295,53 @@ else
   confirm "Proceed with these settings?" "yes" || die "aborted."
 fi
 
-# ---------------------------------------------------------------- 1c. one topology at a time
-#
-# The user has said go, so from here things may be written — and the first of them is the
-# removal of whatever this install would otherwise fight with. An install that changes how
-# sites are served either takes the old way down as part of the switch, or refuses and says
-# what is running; what it must never do is what the reported run did, which was to install
-# a second topology beside a live one and print "Done".
-
-topology_guard() {
-  topology_conflict || return 0
-
-  local other
-  if [ "$MODE" = "auto" ]; then
-    other="a per-site setup"
-  else
-    other="the system Caddy service ($DAEMON_LABEL)"
-  fi
-
-  if [ "$EXISTING_ACTION" != "switch" ] && [ "$DO_SWITCH" != 1 ]; then
-    if [ "$TUI_INTERACTIVE" = 1 ]; then
-      ui_warn "mode '$MODE' cannot share this machine with $other, which is still live:"
-      show_live
-      printf '\n'
-      menu_select "Two ways of serving cannot both own the ports. What now?" 0 \
-        "$G_BOLT Take the current one down, then install" \
-"Stops and removes what is serving now, and only then installs
-mode '$MODE'. This is the tidy-up a reinstall should have done." \
-        "$G_NO Quit and change nothing" \
-"Nothing has been written yet." \
-        || die "aborted — nothing was written."
-      [ "$MENU_CHOICE" = 0 ] || die "aborted — nothing was written."
-      EXISTING_ACTION="switch"
-    else
-      # Unattended, and the answer that cannot break a working machine is no. The point
-      # of failing here rather than warning is that the half-installed state this avoids
-      # looks like a success and serves nothing.
-      ui_warn "refusing to install mode '$MODE': $other is live. What is running now:"
-      show_live
-      ui_hint "re-run with --switch to take it down first, --uninstall to remove ldev,"
-      ui_hint "or without --defaults to decide interactively."
-      die "aborted — nothing was written: $other is still running."
-    fi
-  fi
-
-  if [ "$MODE" = "auto" ]; then
-    takedown_persite || die "aborted — the per-site setup is still live."
-  else
-    takedown_system  || die "aborted — $DAEMON_LABEL is still installed and holding ports 80 and 443."
-  fi
-  return 0
-}
-topology_guard
+# A previous install's ports are a DECISION, not a default. Somebody moves the admin port
+# off 2019 precisely because something else already holds it, and a re-install that resets
+# it to the built-in default re-creates the collision they fixed — silently, because a Caddy
+# that cannot bind its admin API exits at startup rather than warning.
+if [ -f "$CONFIG_FILE" ]; then
+  prev="$(sed -n 's/^ADMIN_PORT=//p' "$CONFIG_FILE" | head -1)"
+  [ -n "$prev" ] && ADMIN_PORT="$prev"
+  prev="$(sed -n 's/^ASK_PORT=//p' "$CONFIG_FILE" | head -1)"
+  [ -n "$prev" ] && ASK_PORT="$prev"
+  prev="$(sed -n 's/^SITE_PORT_BASE=//p' "$CONFIG_FILE" | head -1)"
+  [ -n "$prev" ] && SITE_PORT_BASE="$prev"
+  prev="$(sed -n 's/^PROXY_FALLBACK=//p' "$CONFIG_FILE" | head -1)"
+  [ -n "$prev" ] && [ -z "$PROXY_FALLBACK" ] && PROXY_FALLBACK="$prev"
+fi
 
 # ---------------------------------------------------------------- 2. dependencies
 
-ui_step "$G_PKG" "Dependencies"
+step "Dependencies"
 
 command -v brew >/dev/null 2>&1 || die "Homebrew is required: https://brew.sh"
 
+# mkcert is here again, for a different reason than before. It used to be needed because
+# per-site mode issued a certificate per site by hand. That mode is gone — but the
+# wildcard server now signs its on-demand certificates with MKCERT's root rather than
+# minting a CA of its own, so the root has to exist. See the certificates step below.
 need=()
 command -v dnsmasq >/dev/null 2>&1 || need+=(dnsmasq)
+command -v caddy   >/dev/null 2>&1 || need+=(caddy)
 command -v mkcert  >/dev/null 2>&1 || need+=(mkcert)
-command -v caddy >/dev/null 2>&1 || need+=(caddy)
-command -v php >/dev/null 2>&1 || need+=(php)
+command -v php     >/dev/null 2>&1 || need+=(php)
 
 if [ ${#need[@]} -gt 0 ]; then
-  ui_info "Missing: ${C_B}${need[*]}${C_R}"
-  # brew's own output is the progress bar here; a spinner would only hide it.
-  if confirm "Install them with Homebrew now?" "yes"; then
+  say "Missing: ${need[*]}"
+  if confirm "Install them with Homebrew now?"; then
     brew install "${need[@]}"
   else
     die "cannot continue without: ${need[*]}"
   fi
 else
-  ui_ok "everything ldev needs is already installed"
+  say "All present."
 fi
 
 mkdir -p "$SITES" "$LOGDIR" "$(dirname "$CONFIG_FILE")"
 
 # ---------------------------------------------------------------- 3. DNS
 
-ui_step "$G_NET" "DNS — resolving *.$TLD to 127.0.0.1"
+step "DNS — resolving *.$TLD to 127.0.0.1"
 
 DNSMASQ_D="$BREW_PREFIX/etc/dnsmasq.d"
 mkdir -p "$DNSMASQ_D"
@@ -970,188 +350,359 @@ cat > "$DNSMASQ_D/$TLD.conf" <<EOF
 # subdomain works with no /etc/hosts entry per site.
 address=/$TLD/127.0.0.1
 EOF
-ui_wrote "$DNSMASQ_D/$TLD.conf"
+say "wrote $DNSMASQ_D/$TLD.conf"
 
 # dnsmasq.conf must actually read that directory — a stock Homebrew config does not.
 DNSMASQ_CONF="$BREW_PREFIX/etc/dnsmasq.conf"
 if [ -f "$DNSMASQ_CONF" ] && ! grep -q "^conf-dir=$DNSMASQ_D" "$DNSMASQ_CONF" 2>/dev/null; then
   printf '\n# ldev\nconf-dir=%s,*.conf\n' "$DNSMASQ_D" >> "$DNSMASQ_CONF"
-  ui_wrote "conf-dir line in $DNSMASQ_CONF"
+  say "added conf-dir to $DNSMASQ_CONF"
 fi
 
 # /etc/resolver tells macOS to ask dnsmasq for this TLD specifically. Root-owned.
-#
+say ""
 # Already done is a normal state, not a reason to ask for a password again. Detecting it lets an
 # unattended run finish: --defaults answers yes to everything, and yes here means a sudo that has
-# no terminal to prompt on, which under `set -e` kills the run long before the config is written.
-# --skip-dns is the explicit form of the same thing.
+# no terminal to prompt on, which under `set -e` kills the run 110 lines before the config is
+# written. --skip-dns is the explicit form of the same thing.
 if [ "$SKIP_DNS" = 1 ]; then
-  ui_skip "resolver and dnsmasq left alone (--skip-dns)"
+  say "Skipping the resolver and dnsmasq step (--skip-dns)."
 elif [ -f "/etc/resolver/$TLD" ] && pgrep -x dnsmasq >/dev/null 2>&1; then
-  ui_ok "/etc/resolver/$TLD exists and dnsmasq is running — nothing to do"
+  say "/etc/resolver/$TLD already exists and dnsmasq is running — nothing to do here."
 else
-  ui_info "The next step needs ${C_B}sudo${C_R}: writing /etc/resolver/$TLD and starting dnsmasq as root."
-  ui_hint "dnsmasq must run as root to bind port 53."
-  if confirm "Write /etc/resolver/$TLD and restart dnsmasq as root?" "yes"; then
+  say "Next step needs sudo: writing /etc/resolver/$TLD and starting dnsmasq as root."
+  say "  (dnsmasq must run as root to bind port 53.)"
+  if confirm "Run these now?"; then
     sudo mkdir -p /etc/resolver
     printf 'nameserver 127.0.0.1\n' | sudo tee "/etc/resolver/$TLD" >/dev/null
     sudo brew services restart dnsmasq >/dev/null
-    ui_ok "resolver installed and dnsmasq restarted"
+    say "done."
   else
-    ui_warn "the TLD will not resolve until you run these yourself:"
-    ui_cmd "sudo mkdir -p /etc/resolver"
-    ui_cmd "echo 'nameserver 127.0.0.1' | sudo tee /etc/resolver/$TLD"
-    ui_cmd "sudo brew services restart dnsmasq"
+    cat <<EOF
+
+${YEL}Run these yourself before the TLD will resolve:${R}
+  sudo mkdir -p /etc/resolver
+  echo 'nameserver 127.0.0.1' | sudo tee /etc/resolver/$TLD
+  sudo brew services restart dnsmasq
+EOF
   fi
 fi
 
 # ---------------------------------------------------------------- 4. certificates
 
-ui_step "$G_LOCK" "Certificates"
+step "Certificates"
 
-if [ "$MODE" = "auto" ]; then
-  # Caddy's internal CA issues per-host certs on demand; mkcert's CA is still
-  # installed so anything issued by hand is trusted too.
-  # Auto mode signs on-demand certificates with MKCERT's root, so the chain ends at a
-  # CA the System keychain already holds. That means there is nothing new to trust —
-  # no `caddy trust`, no browser warning — provided mkcert has actually been set up.
-  MKCERT_ROOT="$(mkcert -CAROOT 2>/dev/null || true)"
-  TRUST_CA=0
-  if [ -n "$MKCERT_ROOT" ] && [ -f "$MKCERT_ROOT/rootCA.pem" ] && [ -f "$MKCERT_ROOT/rootCA-key.pem" ]; then
-    ui_ok "signing with the mkcert root already trusted on this machine"
-    ui_hint "$MKCERT_ROOT/rootCA.pem"
-    ui_hint "Each host still gets its own certificate on first request."
-  else
-    # Without the root there is nothing to sign with, and Caddy would fail at startup
-    # on a pki block pointing at files that are not there. Better to say so now.
-    ui_warn "mkcert has no root CA yet, and auto mode signs with it."
-    ui_hint "mkcert -install creates it and adds it to the System keychain (sudo, once)."
-    if confirm "Run mkcert -install now?" "yes"; then
-      if mkcert -install; then
-        MKCERT_ROOT="$(mkcert -CAROOT 2>/dev/null || true)"
-        ui_ok "mkcert root created and trusted"
-      else
-        ui_warn "mkcert -install failed — the server will not start until its root exists."
-      fi
-    else
-      ui_skip "no mkcert root — Caddy will fail to start with the generated config"
-      ui_cmd "mkcert -install"
-    fi
-  fi
+# One certificate per host, issued the first time that host is asked for — but signed by
+# MKCERT's root rather than by a CA Caddy mints for itself.
+#
+# The two ways to get a trusted local certificate pull in opposite directions. mkcert
+# issues per host, by hand, ahead of time, which cannot serve a hostname whose folder was
+# created a second ago. Caddy's own CA issues on demand but from a brand-new root that
+# every browser has to be taught to trust. Handing Caddy the mkcert root as its signing CA
+# takes the useful half of each: issuance stays on demand, so a folder is still a site,
+# and the chain ends at a root already in the System keychain.
+#
+# So there is no `caddy trust` step at all any more, and no browser-warning round when
+# migrating from a mkcert setup. Verified end to end: a client trusting only rootCA.pem
+# gets 200, with the leaf issued by "<ca name> - ECC Intermediate".
+MKCERT_ROOT="$(mkcert -CAROOT 2>/dev/null || true)"
+if [ -n "$MKCERT_ROOT" ] && [ -f "$MKCERT_ROOT/rootCA.pem" ] && [ -f "$MKCERT_ROOT/rootCA-key.pem" ]; then
+  ui_ok "signing with the mkcert root already trusted on this machine"
+  ui_hint "$MKCERT_ROOT/rootCA.pem"
+  ui_hint "Each host still gets its own certificate on first request."
 else
-  ui_info "mkcert issues the per-site certificates in mode '$MODE'."
-  if confirm "Run mkcert -install? (sudo, once)" "yes"; then
-    mkcert -install || ui_warn "mkcert -install failed — certificates will not be trusted."
-    ui_ok "mkcert root CA installed"
+  # Without the root there is nothing to sign with, and Caddy fails at startup on a pki
+  # block pointing at files that are not there. Better to say so now than at bootstrap.
+  warn "mkcert has no root CA yet, and the server signs with it."
+  ui_hint "mkcert -install creates it and adds it to the System keychain (sudo, once)."
+  if confirm "Run mkcert -install now?" "yes"; then
+    if mkcert -install; then
+      MKCERT_ROOT="$(mkcert -CAROOT 2>/dev/null || true)"
+      ui_ok "mkcert root created and trusted"
+    else
+      warn "mkcert -install failed — the server will not start until its root exists."
+    fi
   else
-    ui_skip "untrusted CA — browsers will warn on every ldev site"
+    ui_skip "no mkcert root — Caddy will fail to start with the generated config"
+    ui_cmd "mkcert -install"
   fi
 fi
 
 # ---------------------------------------------------------------- 5. dashboard
 
-ui_step "$G_CHART" "Dashboard"
-
-npm_install() { cd "$REPO_DIR/dashboard" && npm install --silent; }
-npm_build()   { cd "$REPO_DIR/dashboard" && npm run build --silent; }
+step "Dashboard"
 
 if [ -d "$REPO_DIR/dashboard" ]; then
   if [ ! -d "$REPO_DIR/dashboard/node_modules" ]; then
-    run_task "Installing dashboard dependencies" npm_install \
-      || ui_warn "npm install failed; the build below will probably fail too."
+    say "Installing dashboard dependencies..."
+    ( cd "$REPO_DIR/dashboard" && npm install --silent )
   fi
-  run_task "Building dashboard" npm_build \
-    || ui_warn "dashboard build failed; the fallback will 404."
+  say "Building dashboard..."
+  ( cd "$REPO_DIR/dashboard" && npm run build --silent ) || warn "dashboard build failed; the fallback will 404."
 else
-  ui_warn "no dashboard/ directory in this repo — the fallback will 404."
+  warn "no dashboard/ directory in this repo — the fallback will 404."
 fi
 
-# ---------------------------------------------------------------- 6. server config
-
-ui_step "$G_GEAR" "Server configuration ($MODE)"
+# ---------------------------------------------------------------- 6. paths
 
 CADDY_BIN="$(command -v caddy || echo "$BREW_PREFIX/bin/caddy")"
 CADDYFILE="$HOME/.config/ldev/Caddyfile"
 
-# Pick ports nothing else has, instead of substituting the defaults and hoping.
+# ---------------------------------------------------------------- 7. server config
+
+# ------------------------------------------------- 7a. the installation being replaced
+
+step "Existing installation"
+
+# Whatever already answers for this TLD has to come down before ldev's own daemon goes up,
+# and finding it is the installer's job. It used not to be: an install that changed the
+# topology wrote its config, installed its daemon, and left the previous one running — so
+# both were live, one held 80, the other held 443, and the bare https://<tld>/ URL answered
+# from neither while the install reported success.
 #
-# ADMIN_PORT defaulted to 2019 and went into the template verbatim. 2019 is also Caddy's
-# OWN default, so any other Caddy on the machine already has it — and a Caddy that cannot
-# bind its admin port exits at startup rather than warning. Under launchd's KeepAlive that
-# is a crash loop whose only symptom is "nothing is listening on 443", with a config that
-# `caddy validate` calls perfectly valid, because validation binds nothing. Observed
-# exactly that on a machine where 2019 belonged to a per-site Caddy.
-#
-# Claimed-but-stopped counts as taken: a site that is not running right now still owns its
-# ports, and allocating around only what is listening hands out a pair that collides the
-# moment it starts again. This is the reasoning bin/ldev's persite allocator already uses;
-# it is duplicated rather than shared because bin/ldev is being rewritten elsewhere.
-# Is the certificate this server hands out actually trusted here? Asked WITHOUT -k.
-#
-# There is no `caddy trust` step any more: auto mode signs with the mkcert root, which
-# the System keychain already holds. That removes the failure this replaced but does not
-# prove the result, and the failure it replaced was invisible in exactly this way. On a
-# machine where another Caddy owned 2019, `caddy trust` with no --address fetched and
-# installed THAT server's root and reported success; both roots carry the CN "Caddy Local
-# Authority", so the keychain showed two identical-looking entries with the wrong one
-# trusted. Every host answered under `curl -k` and returned 000 under plain `curl` with
-# "unable to get local issuer certificate" — a chain that was never broken, above a
-# trusted root that was the wrong one.
-#
-# `curl -k` would pass in every one of those states, which is precisely why this does not
-# use it. Dropping -k is the whole check.
-verify_tls() {
-  command -v curl >/dev/null 2>&1 || return 0
-  local host="ldev-install-probe.$TLD" code
-  code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 "https://$host/" 2>/dev/null || true)"
-  case "$code" in
-    ''|000)
-      ui_warn "served a certificate this machine does not trust (https://$host)."
-      ui_hint "Sites will load with a browser warning. The chain is probably fine and the"
-      ui_hint "root is probably not trusted — compare what is being served against mkcert's:"
-      ui_cmd "openssl s_client -connect 127.0.0.1:443 -servername $host </dev/null | openssl x509 -noout -issuer"
-      ui_cmd "mkcert -install"
-      ;;
-    *)
-      ui_ok "HTTPS works with no extra trust step (verified without -k)"
-      ;;
-  esac
-  return 0
+# Per-site servers on high ports are deliberately NOT touched. They are fronted by the
+# wildcard server now rather than replaced by it, so stopping them would take down the
+# sites this install is meant to make reachable.
+
+# A port's listener, or empty. lsof exits non-zero when it can see nothing — INCLUDING a
+# root-owned socket an unprivileged user cannot inspect, which is exactly the case here —
+# and this script runs under `set -e` with pipefail, so the failure is swallowed on
+# purpose. An earlier version of this check ended in an unguarded lsof|awk pipeline and
+# killed the installer on any machine with something already on port 80.
+port_owner() {
+  local out=""
+  out="$(lsof -nP -iTCP:"$1" -sTCP:LISTEN 2>/dev/null | awk 'NR>1 {print $1; exit}')" || true
+  printf '%s' "$out"
 }
 
-claimed_ports() {
-  local f
-  for f in "$SITES"/*/Caddyfile; do
+port_busy() { nc -z 127.0.0.1 "$1" 2>/dev/null; }
+
+# launchd jobs that serve this TLD, one plist path per line.
+#
+# Matched by CONTENT, never by filename. The job doing this on the machine that motivated
+# the check was called com.bryce.caddy-matsu — nothing in that name says ldev, or caddy's
+# role, or which TLD it serves, and a filename convention is not something an installer
+# gets to assume about a file somebody else wrote.
+# The config file a job runs, or empty.
+job_config() {
+  grep -oE '<string>[^<]*(Caddyfile|\.conf)[^<]*</string>' "$1" 2>/dev/null \
+    | sed -E 's|</?string>||g' | head -1
+}
+
+ldev_launchd_jobs() {
+  local f cfg
+  for f in /Library/LaunchDaemons/*.plist "$HOME/Library/LaunchAgents"/*.plist; do
     [ -f "$f" ] || continue
-    site_ports_of "$f"
-  done
-}
+    grep -qi "caddy" "$f" 2>/dev/null || continue
 
-next_free_port() { # next_free_port <start> <claimed-list> -> the first port nobody has
-  local p="$1" claimed="$2" n=0
-  while [ "$n" -lt 200 ]; do
-    if ! printf '%s\n' "$claimed" | grep -qx "$p" && ! port_busy "$p"; then
-      printf '%s' "$p"; return 0
+    # The plist names paths; whether those paths serve THIS TLD is usually only visible
+    # inside the config they point at. A Homebrew caddy service, for instance, says nothing
+    # but /opt/homebrew/etc/Caddyfile — and that file turned out to hold the whole front
+    # door for this TLD. Judging the job by its plist alone missed the one process actually
+    # sitting on 80 and 443.
+    cfg="$(job_config "$f")"
+
+    if grep -qF "$HOME/.config/ldev" "$f" 2>/dev/null \
+    || grep -qF "$SITES" "$f" 2>/dev/null \
+    || grep -qF ".$TLD" "$f" 2>/dev/null \
+    || { [ -n "$cfg" ] && [ -f "$cfg" ] && grep -qE "[a-z0-9-]+\.$TLD" "$cfg" 2>/dev/null; }; then
+      printf '%s\n' "$f"
     fi
-    p=$((p + 1)); n=$((n + 1))
   done
-  printf '%s' "$1"                      # gave up: keep the default and let the check below say so
 }
 
-if [ "$MODE" = "auto" ]; then
-  _claimed="$(claimed_ports)"
-  _admin="$(next_free_port "$ADMIN_PORT" "$_claimed")"
-  _ask="$(next_free_port "$ASK_PORT" "$_claimed")"
-  [ "$_ask" = "$_admin" ] && _ask="$(next_free_port "$((_admin + 1))" "$_claimed")"
-  if [ "$_admin" != "$ADMIN_PORT" ]; then
-    ui_info "admin port $ADMIN_PORT is taken — using $_admin"
-    ADMIN_PORT="$_admin"
+plist_label() {
+  /usr/libexec/PlistBuddy -c 'Print :Label' "$1" 2>/dev/null || basename "$1" .plist
+}
+
+# Does this launchd job want port 80 or 443?
+#
+# This is the difference between the job ldev is REPLACING and the ones it is about to
+# start fronting. A per-site server on 8443 is not in the way — the wildcard server proxies
+# to it — and removing it would take down the very site this install is meant to make
+# reachable portlessly. Only a job holding a privileged port has to go.
+#
+# The answer is in the Caddyfile the job runs, not in the plist: a Caddy site address with
+# no port means 443, `http://` means 80, and anything else names its port outright.
+job_wants_privileged_port() {
+  local plist="$1" cfg="" line addr
+  cfg="$(job_config "$plist")" || true
+  [ -n "$cfg" ] && [ -f "$cfg" ] || return 1   # cannot tell — treat as not in the way
+
+  # Real address lines only: not comments, and ending in the `{` that opens a site block.
+  # The keyless global block `{` is excluded, or every file would look like an address.
+  while IFS= read -r line; do
+    # Per ADDRESS, not per line. A Caddy address line can carry several, and each is
+    # INDEPENDENT: in `matsu.ldev, matsu-dev.ldev:8444 {` the neighbour is on 8444 and
+    # matsu.ldev is on the default 443. Reading the first port on the LINE would call that
+    # file unprivileged and leave the job holding 443 in place — which is the entire
+    # failure this check exists to prevent.
+    line="${line%\{}"
+    for addr in ${line//,/ }; do
+      case "$addr" in
+        "") continue ;;
+        *:80|*:443)  return 0 ;;                 # names a privileged port outright
+        http://*:*)  continue ;;                 # http:// with an explicit port
+        http://*)    return 0 ;;                 # http:// with none means 80
+        https://*:*) continue ;;
+        https://*)   return 0 ;;                 # https:// with none means 443
+        *:[0-9]*)    continue ;;                 # some other port
+        *)           return 0 ;;                 # bare host, no port: https on 443
+      esac
+    done
+  done <<EOF
+$(grep -vE '^[[:space:]]*#' "$cfg" 2>/dev/null | grep -E '\{[[:space:]]*$' | grep -vE '^[[:space:]]*\{[[:space:]]*$' || true)
+EOF
+  return 1
+}
+
+ALL_JOBS="$(ldev_launchd_jobs || true)"
+
+# Only the jobs holding 80 or 443 are in the way. The rest are per-site servers this
+# install is about to put BEHIND the wildcard one, and they keep running.
+EXISTING=""
+KEPT=""
+while IFS= read -r f; do
+  [ -n "$f" ] || continue
+  if job_wants_privileged_port "$f"; then
+    EXISTING="$EXISTING$f"$'\n'
+  else
+    KEPT="$KEPT$f"$'\n'
   fi
-  if [ "$_ask" != "$ASK_PORT" ]; then
-    ui_info "ask port $ASK_PORT is taken — using $_ask"
-    ASK_PORT="$_ask"
+done <<EOF
+$ALL_JOBS
+EOF
+EXISTING="${EXISTING%$'\n'}"
+KEPT="${KEPT%$'\n'}"
+OWNER_80="$(port_owner 80)"
+OWNER_443="$(port_owner 443)"
+
+if [ -n "$KEPT" ]; then
+  n=0
+  while IFS= read -r f; do [ -n "$f" ] && n=$((n + 1)); done <<EOF
+$KEPT
+EOF
+  say "$n per-site server(s) on high ports — left running, the wildcard server will proxy to them."
+fi
+
+if [ -z "$EXISTING" ] && ! port_busy 80 && ! port_busy 443; then
+  say "Nothing else holds ports 80 or 443."
+else
+  say "Found something already serving, or already holding the ports ldev needs:"
+  say ""
+  if [ -n "$EXISTING" ]; then
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      say "  launchd  $(plist_label "$f")"
+      say "           $f"
+    done <<EOF
+$EXISTING
+EOF
+  fi
+  # A busy port with no plist behind it is somebody's `caddy run` in a terminal, or a
+  # server this installer has no business removing. Name it and stop, rather than guess.
+  for prt in 80 443; do
+    if port_busy "$prt"; then
+      owner="$(port_owner "$prt")"
+      say "  port $prt  ${owner:-held by a process this user cannot see (root-owned)}"
+    fi
+  done
+  say ""
+
+  if [ -n "$EXISTING" ]; then
+    say "Removing these stops them serving and deletes their plist. Site FOLDERS are"
+    say "never touched, and per-site servers on high ports keep running — the new"
+    say "wildcard server proxies to them rather than replacing them."
+    if confirm "Take them down?"; then
+      while IFS= read -r f; do
+        [ -n "$f" ] || continue
+        label="$(plist_label "$f")"
+        case "$f" in
+          /Library/LaunchDaemons/*)
+            sudo launchctl bootout "system/$label" 2>/dev/null || true
+            # launchd keeps a per-label DISABLED record that outlives both bootout and
+            # deleting the plist, and a later bootstrap of that label then fails with
+            # "Bootstrap failed: 5: Input/output error" — a message naming neither the
+            # label nor the word disabled. Leave the label clean on the way out.
+            sudo launchctl enable "system/$label" 2>/dev/null || true
+            sudo rm -f "$f"
+            ;;
+          *)
+            launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
+            launchctl enable "gui/$(id -u)/$label" 2>/dev/null || true
+            rm -f "$f"
+            ;;
+        esac
+        say "  removed $label"
+      done <<EOF
+$EXISTING
+EOF
+      # launchd unloads asynchronously; bootstrapping into a port the old job has not let
+      # go of yet fails in a way that reads as a port conflict with nothing visible on it.
+      for _ in 1 2 3 4 5 6 7 8 9 10; do
+        port_busy 80 || port_busy 443 || break
+        sleep 1
+      done
+      if port_busy 80 || port_busy 443; then
+        warn "ports 80/443 are still busy after removing those jobs — something else holds them."
+      else
+        say "  ports 80 and 443 are free."
+      fi
+    else
+      warn "Left in place. The ldev daemon will fail to bind whichever port they hold."
+    fi
+  else
+    warn "No launchd job explains this, so there is nothing here safe to remove."
+    say  "Stop whatever holds the port yourself, then re-run this installer."
   fi
 fi
+
+# The wildcard server's own two ports, chosen AFTER the takedown — before it, a port held
+# by the job about to be removed looks taken and would be skipped for no reason.
+#
+# Caddy binds its admin API at startup and EXITS if it cannot, without warning, so a
+# collision here is a server that never comes up and never says why. The site that hit this
+# was seasonal-drops, whose own Caddy holds 2019: the installer's default.
+free_port_from() {
+  local p="$1" n=0
+  while [ "$n" -lt 100 ]; do
+    port_busy "$p" || { printf '%s' "$p"; return 0; }
+    p=$((p + 1)); n=$((n + 1))
+  done
+  printf '%s' "$1"
+}
+
+new_admin="$(free_port_from "$ADMIN_PORT")"
+if [ "$new_admin" != "$ADMIN_PORT" ]; then
+  warn "admin port $ADMIN_PORT is already in use — using $new_admin instead."
+  ADMIN_PORT="$new_admin"
+fi
+new_ask="$(free_port_from "$ASK_PORT")"
+if [ "$new_ask" != "$ASK_PORT" ]; then
+  warn "ask port $ASK_PORT is already in use — using $new_ask instead."
+  ASK_PORT="$new_ask"
+fi
+
+# Written here rather than earlier because the ports above are only knowable now, and
+# `ldev render` two steps down reads this file for them.
+cat > "$CONFIG_FILE" <<EOF
+# ldev — written by install.sh on $(date '+%Y-%m-%d %H:%M:%S')
+TLD=$TLD
+SITES=$SITES
+PHP_FPM=$PHP_FPM
+DASHBOARD=$DASHBOARD
+ADMIN_PORT=$ADMIN_PORT
+SITE_PORT_BASE=$SITE_PORT_BASE
+ASK_PORT=$ASK_PORT
+PROXY_FALLBACK=$PROXY_FALLBACK
+LOGDIR=$LOGDIR
+REPO_DIR=$REPO_DIR
+EOF
+say "wrote $CONFIG_FILE (admin $ADMIN_PORT, ask $ASK_PORT)"
+
+# ---------------------------------------------------------------- 7b. server configuration
+
+step "Server configuration"
 
 render() {
   sed -e "s|__TLD__|$TLD|g" \
@@ -1168,113 +719,116 @@ render() {
       "$1"
 }
 
-case "$MODE" in
-  auto)
-    OUT="$HOME/.config/ldev/Caddyfile"
-    render "$REPO_DIR/templates/Caddyfile.auto.tmpl" > "$OUT"
-    ui_wrote "$OUT"
-    if caddy validate --config "$OUT" >/dev/null 2>&1; then
-      ui_ok "the generated config validates"
-    else
-      ui_warn "caddy could not validate the generated config"
-      ui_cmd "caddy validate --config $OUT"
-    fi
+# `ldev render` rather than a render() call here, because the wildcard Caddyfile is not a
+# straight substitution any more: it carries a generated proxy block for every site that
+# runs its own server, and that generator lives in bin/ldev. Rendering it twice, in two
+# languages, is how the two would drift.
+"$REPO_DIR/bin/ldev" render || die "could not render $CADDYFILE"
 
-    ui_info "Ports 80 and 443 are privileged, so Caddy starts via launchd as root."
-    if confirm "Install and start the ldev launchd service? (sudo)" "yes"; then
-      PLIST="$DAEMON_PLIST"
-      render "$REPO_DIR/templates/com.ldev.caddy.plist.tmpl" | sudo tee "$PLIST" >/dev/null
-      sudo chown root:wheel "$PLIST"; sudo chmod 644 "$PLIST"
-      sudo launchctl bootout "system/$DAEMON_LABEL" >/dev/null 2>&1 || true
-      # Before every bootstrap, without exception: see launchd_enable_label above. The
-      # disabled record is per label and survives both the bootout and the plist, so a
-      # machine that has ever had this service disabled cannot start it again until this
-      # runs — and the error it gets instead names neither the label nor the reason.
-      launchd_enable_label
-      boot_rc=0
-      sudo launchctl bootstrap system "$PLIST" || boot_rc=$?
-      if [ "$boot_rc" = 0 ]; then
-        # "bootstrap succeeded" means launchd ACCEPTED the job, not that Caddy is
-        # serving. Caddy can exit a moment later — an admin port already taken is the
-        # usual reason — and KeepAlive then restarts it into the same failure forever.
-        # Reporting success off the exit code alone is how an install finishes green
-        # with nothing listening, which is the one outcome the operator cannot see.
-        # So ask the socket, and give it a moment to get there first.
-        if [ "${LDEV_SKIP_PORT_PROBE:-0}" = 1 ]; then
-          ui_ok "service bootstrapped (ports not probed)"
-        else
-          serving=0
-          for _ in 1 2 3 4 5 6 7 8 9 10; do
-            if port_busy 443 || port_busy 80; then serving=1; break; fi
-            sleep 0.5
-          done
-          if [ "$serving" = 1 ]; then
-            ui_ok "service started and listening"
-            verify_tls
-          else
-            ui_warn "$DAEMON_LABEL was accepted by launchd but nothing is listening on 80 or 443."
-            ui_hint "Caddy most likely started and exited. The usual cause is its admin port"
-            ui_hint "($ADMIN_PORT) already being held by another Caddy, which makes it exit at"
-            ui_hint "startup rather than warn. The log says which:"
-            ui_cmd "tail -20 $LOGDIR/caddy.err.log"
-            ui_cmd "sudo launchctl print system/$DAEMON_LABEL | head -20"
-          fi
-        fi
-      else
-        # launchd's own words for this are "Bootstrap failed: 5: Input/output error",
-        # which reads like a malformed plist and sends people to rewrite a file that was
-        # fine. Say what it actually means, name the label, and hand over the command
-        # that shows the truth.
-        ui_warn "launchctl bootstrap failed (exit $boot_rc) — $DAEMON_LABEL is NOT running."
-        ui_hint "launchd reports this as 'Bootstrap failed: 5: Input/output error' and names"
-        ui_hint "neither the label nor a reason. The usual cause is a disabled record for"
-        ui_hint "$DAEMON_LABEL in the system domain, which survives bootout and the plist."
-        ui_hint "Check, clear it, and try again:"
-        ui_cmd "sudo launchctl print-disabled system | grep $DAEMON_LABEL"
-        ui_cmd "sudo launchctl enable system/$DAEMON_LABEL"
-        ui_cmd "sudo launchctl bootstrap system $PLIST"
-        ui_hint "If it still fails, the plist itself is next: plutil -lint $PLIST"
-      fi
-    else
-      ui_skip "no service installed — start Caddy yourself with:"
-      ui_cmd "sudo caddy run --config $OUT"
-    fi
-    ;;
-  persite)
-    ui_info "Per-site mode makes no global change."
-    ui_hint "Each site gets its own Caddyfile and its own pair of ports:"
-    ui_cmd "ldev new <name>   # site $SITE_PORT_BASE+n, admin $ADMIN_PORT+n"
-    ui_hint "Both ports must be unique per site — two Caddy processes cannot share"
-    ui_hint "an admin port, and the second one exits at startup instead of warning."
-    ui_hint "See docs/persite.md."
-    ;;
-esac
+say ""
+say "Ports 80 and 443 are privileged, so Caddy needs to start via launchd as root."
+if confirm "Install and start the ldev launchd service?"; then
+  PLIST="$DAEMON_PLIST"
+  render "$REPO_DIR/templates/com.ldev.caddy.plist.tmpl" | sudo tee "$PLIST" >/dev/null
+  sudo chown root:wheel "$PLIST"; sudo chmod 644 "$PLIST"
+  sudo launchctl bootout system/com.ldev.caddy 2>/dev/null || true
+  # If this label was ever booted out and its plist deleted, launchd still holds a disabled
+  # record for it and bootstrap fails with "Bootstrap failed: 5: Input/output error" — which
+  # names neither the label nor the word disabled, so it reads as a broken plist. Enabling
+  # first is a no-op when there is no such record, and the fix when there is.
+  sudo launchctl enable system/com.ldev.caddy 2>/dev/null || true
+  sudo launchctl bootstrap system "$PLIST"
+  say "service started."
+else
+  say ""
+  say "${YEL}Nothing will answer on 80 or 443 until it runs. Start it yourself with:${R}"
+  say "  sudo caddy run --config $CADDYFILE"
+fi
 
-# ---------------------------------------------------------------- 7. save + report
+# ---------------------------------------------------------------- 8. PATH
 
-ui_step "$G_PARTY" "Done"
+step "PATH"
 
-cat > "$CONFIG_FILE" <<EOF
-# ldev — written by install.sh on $(date '+%Y-%m-%d %H:%M:%S')
-TLD=$TLD
-SITES=$SITES
-MODE=$MODE
-PHP_FPM=$PHP_FPM
-DASHBOARD=$DASHBOARD
-ADMIN_PORT=$ADMIN_PORT
-SITE_PORT_BASE=$SITE_PORT_BASE
-ASK_PORT=$ASK_PORT
-LOGDIR=$LOGDIR
-REPO_DIR=$REPO_DIR
+# Which file, and which SYNTAX, depends on the shell, and guessing is worse than not
+# offering: a line appended to ~/.zshrc does nothing for a bash or fish user, who is then
+# told their PATH is set while their shell still cannot find ldev. Only shells whose
+# startup file and export syntax are known get an offer; anything else is printed for the
+# reader to place, because they know where their own config lives and this script does not.
+#
+# $SHELL is the LOGIN shell — what a new terminal window starts — which is the right
+# question here. The shell currently running this script is bash either way.
+shell_rc() {
+  case "${SHELL##*/}" in
+    zsh)  printf '%s' "$HOME/.zshrc" ;;
+    # macOS Terminal opens LOGIN shells, and a login bash reads .bash_profile and pointedly
+    # does NOT read .bashrc. Writing to .bashrc is the classic way to make this silently
+    # not work on a Mac.
+    bash) if [ -f "$HOME/.bash_profile" ]; then printf '%s' "$HOME/.bash_profile"
+          else printf '%s' "$HOME/.profile"; fi ;;
+    fish) printf '%s' "$HOME/.config/fish/config.fish" ;;
+    ksh)  printf '%s' "$HOME/.kshrc" ;;
+    *)    printf '' ;;
+  esac
+}
+
+# fish is not POSIX and `export PATH="...:$PATH"` is a syntax error in it. fish_add_path is
+# also idempotent, so re-running the installer cannot stack duplicates the way the export
+# line would.
+path_line() {
+  case "${SHELL##*/}" in
+    fish) printf 'fish_add_path %s' "$REPO_DIR/bin" ;;
+    *)    printf 'export PATH="%s:$PATH"' "$REPO_DIR/bin" ;;
+  esac
+}
+
+RC="$(shell_rc)"
+LINE="$(path_line)"
+FOUND="$(command -v ldev 2>/dev/null || true)"
+
+if [ "$FOUND" = "$REPO_DIR/bin/ldev" ]; then
+  say "Already on your PATH — ldev resolves to $FOUND."
+elif [ -n "$FOUND" ]; then
+  # A different checkout wins the name. Adding ours would not change that, since the
+  # existing entry comes first, so say which one answers rather than appearing to fix it.
+  warn "'ldev' already resolves to $FOUND, which is not this checkout."
+  say  "This one is $REPO_DIR/bin/ldev — call it by full path, or reorder your PATH."
+elif [ -z "$RC" ]; then
+  say "Shell '${SHELL##*/}' is not one this script knows how to edit."
+  say "Add $REPO_DIR/bin to your PATH in its startup file:"
+  say "  $LINE"
+elif [ -f "$RC" ] && grep -qF "$REPO_DIR/bin" "$RC"; then
+  say "$RC already adds it. Open a new terminal, or: source $RC"
+else
+  say "ldev lives in $REPO_DIR/bin, which is not on your PATH."
+  say "This would append to $RC:"
+  say ""
+  say "  $LINE"
+  say ""
+  if confirm "Add it?"; then
+    mkdir -p "$(dirname "$RC")"        # fish's config directory may not exist yet
+    printf '\n# ldev\n%s\n' "$LINE" >> "$RC"
+    say "added to $RC — run 'source $RC', or open a new terminal."
+  else
+    say "${YEL}Add it yourself:${R}"
+    say "  echo '$LINE' >> $RC"
+  fi
+fi
+
+# ---------------------------------------------------------------- 9. report
+
+step "Done"
+cat <<EOF
+
+  Config      $CONFIG_FILE
+  Dashboard   https://$TLD/          (and any name with no directory behind it)
+  A new site  mkdir $SITES/<name>    ->  https://<name>.$TLD
+              the .$TLD suffix on the directory is optional; both are served
+
+  Its own server, for a site that needs one — a different PHP version, its own
+  certificate, a proxy to a running app, restarts that leave the others alone:
+              $REPO_DIR/bin/ldev standalone <name>
+
+  Check it:   $REPO_DIR/bin/ldev doctor
+              (or just 'ldev doctor', if the PATH step above added it)
+
 EOF
-ui_wrote "$CONFIG_FILE"
-
-printf '\n'
-ui_kv "Dashboard" "http://$TLD/"
-ui_kv "A new site" "mkdir $SITES/<name>   ${C_DIM}->${C_R}  https://<name>.$TLD"
-ui_kv ""           "${C_DIM}folders already named <name>.$TLD keep working too${C_R}"
-ui_kv "Logs"       "$LOGDIR"
-printf '\n %sNext%s\n\n' "$C_B" "$C_R"
-ui_item "check every layer:  ${C_CYN}$REPO_DIR/bin/ldev doctor${C_R}"
-ui_item "put ldev on PATH:   ${C_CYN}echo 'export PATH=\"$REPO_DIR/bin:\$PATH\"' >> ~/.zshrc${C_R}"
-printf '\n'
