@@ -1,0 +1,91 @@
+{
+  "version": "0.1.0",
+  "id": "972b95bc-878c-4e04-a4d9-cf476f0428aa",
+  "timestamp": "2026-09-10T02:46:13Z",
+  "vcs": {
+    "type": "git",
+    "revision": "e8f70513df0aad187e712de63941a97453242ced"
+  },
+  "tool": {
+    "name": "triaj",
+    "version": "1.3.1"
+  },
+  "files": [
+    {
+      "path": "install.sh",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/eb23749b-b71d-44b3-ab30-5c8053a65845",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 972,
+              "end_line": 973,
+              "content_hash": "sha256:51d5547dca30d1b007501e1ffc3df5838629568fbf14ed20200447627739d807",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 975,
+              "end_line": 975,
+              "content_hash": "sha256:5b7f8e106b5cc801bec769efbb9997e53b9fb0c5ee60f4791daa979a20644259",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 977,
+              "end_line": 977,
+              "content_hash": "sha256:aab4a047f2a3a2c47ba4b8a2171f7136bad62d4da993137b75914afbfef39843",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 979,
+              "end_line": 979,
+              "content_hash": "sha256:31128c8f15b86fb982429e4b415765d7aef2aa84ddb466e037ee239519f7a13c",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 1017,
+              "end_line": 1085,
+              "content_hash": "sha256:6132b28802637aec6a1a2d71640af03450041bc7cdfda34d2e5394f96853d471",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 1142,
+              "end_line": 1142,
+              "content_hash": "sha256:e630e98ac3170b848547bc8e4f0996c3b001fba88e566cea3e8168ae37fafd45",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "triaj": {
+      "task": "Choose free ports, and trust our own CA rather than whoever owns 2019",
+      "status": "Waiting",
+      "agent": "claude-code",
+      "attribution_granularity": "commit"
+    }
+  }
+}
