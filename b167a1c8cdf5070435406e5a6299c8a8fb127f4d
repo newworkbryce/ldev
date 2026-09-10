@@ -1,0 +1,132 @@
+{
+  "version": "0.1.0",
+  "id": "01bddcd6-e19b-4afb-8934-6edcbb8d9864",
+  "timestamp": "2026-09-10T02:34:48Z",
+  "vcs": {
+    "type": "git",
+    "revision": "b167a1c8cdf5070435406e5a6299c8a8fb127f4d"
+  },
+  "tool": {
+    "name": "triaj",
+    "version": "1.3.1"
+  },
+  "files": [
+    {
+      "path": "install.sh",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/eb23749b-b71d-44b3-ab30-5c8053a65845",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 160,
+              "end_line": 161,
+              "content_hash": "sha256:c9cdb9addf1fbbf1c988faf9761a97673b3cea267b4f89094be60630b93c19e2",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 196,
+              "end_line": 225,
+              "content_hash": "sha256:ebd1dc90751852fcdf80430959fbcb7c67651d3db924a426a9b96b2f6a95e5b7",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 248,
+              "end_line": 265,
+              "content_hash": "sha256:e78f0796fcaca3fe9727684f71672b3b46c5c974da5f3a524a21ecb125a3b195",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 285,
+              "end_line": 286,
+              "content_hash": "sha256:f84a9175ff6d91c813d394a79a1fe53920226a53c41cdf05681de5df1963c210",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 368,
+              "end_line": 372,
+              "content_hash": "sha256:d1dd19e533bda586773ec13106a1136d366d6f5efd26de7c43ab778362b18c84",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 393,
+              "end_line": 399,
+              "content_hash": "sha256:0947319af30f81cd37d104d7464bbf44330f848b092f39b097d8b8669cdefb96",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 402,
+              "end_line": 420,
+              "content_hash": "sha256:f00beb62588090347a0c53167e7ba8efa692a6643259c6940843ce08ca2c0a9f",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            },
+            {
+              "start_line": 786,
+              "end_line": 800,
+              "content_hash": "sha256:38a0c84ca52e2efdb41ae2083ab7d9588da2647955e4f36b65e8939358445bbf",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": "test/tui-menu.test.sh",
+      "conversations": [
+        {
+          "url": "triaj:session/claude/eb23749b-b71d-44b3-ab30-5c8053a65845",
+          "contributor": {
+            "type": "ai",
+            "model_id": "claude-code"
+          },
+          "ranges": [
+            {
+              "start_line": 392,
+              "end_line": 409,
+              "content_hash": "sha256:54820d94eab77edd01e5b7b7e55dfc03a5691e97f958e559d661145462552d24",
+              "contributor": {
+                "type": "ai",
+                "model_id": "claude-code"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "metadata": {
+    "triaj": {
+      "task": "See any root Caddy, and test the TLD before calling it dead",
+      "status": "Waiting",
+      "agent": "claude-code",
+      "attribution_granularity": "commit"
+    }
+  }
+}
